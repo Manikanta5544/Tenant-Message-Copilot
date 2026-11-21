@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+/* ---------- Design tokens ----------
+   Semantic tokens only; components never use raw colours. Light is the default, dark follows the OS
+   (prefers-color-scheme) unless the header toggle stored a choice (data-theme on <html>).
+   Every text/background pair is checked against WCAG AA by `npm run contrast`. */
+:root {
+  --bg: #f5f6f9;
+  --bg-subtle: #eceef3;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: #dde1e9;
+  --border-strong: #868fa0;
+  --text: #141925;
+  --text-muted: #424b5e;
+  --text-faint: #566075;
+  --accent: #3b41b0;
+  --accent-hover: #2f3590;
+  --accent-soft: #e8e9fa;
+  --accent-fg: #ffffff;
+
+  --ready-fg: #0f6338; --ready-bg: #e2f4ea; --ready-border: #8ccaa8;
+  --review-fg: #85470a; --review-bg: #fcefd6; --review-border: #e0b56e;
+  --escalate-fg: #a01f19; --escalate-bg: #fde7e5; --escalate-border: #eb9d97;
+  --fact-fg: #0a5875; --fact-bg: #dff0f7; --fact-border: #86bfd6;
+
+  --shadow-1: 0 1px 2px rgb(20 25 37 / 0.06), 0 0 0 1px rgb(20 25 37 / 0.02);
+  --shadow-2: 0 8px 24px rgb(20 25 37 / 0.12), 0 0 0 1px rgb(20 25 37 / 0.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1016; --bg-subtle: #141922; --surface: #171c26; --surface-raised: #1e2431;
+    --border: #2b3242; --border-strong: #6b7588;
+    --text: #e9ecf3; --text-muted: #b1b9c9; --text-faint: #98a1b4;
+    --accent: #a3a9ff; --accent-hover: #bcc0ff; --accent-soft: #23294f; --accent-fg: #0d1016;
+    --ready-fg: #74dca3; --ready-bg: #12301f; --ready-border: #2d6b4a;
+    --review-fg: #f4b862; --review-bg: #3a2a0d; --review-border: #7d5a1f;
+    --escalate-fg: #ff9f97; --escalate-bg: #3e1815; --escalate-border: #85342e;
+    --fact-fg: #80cbea; --fact-bg: #11303e; --fact-border: #2d6580;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4); --shadow-2: 0 8px 24px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.04);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1016; --bg-subtle: #141922; --surface: #171c26; --surface-raised: #1e2431;
+  --border: #2b3242; --border-strong: #6b7588;
+  --text: #e9ecf3; --text-muted: #b1b9c9; --text-faint: #98a1b4;
+  --accent: #a3a9ff; --accent-hover: #bcc0ff; --accent-soft: #23294f; --accent-fg: #0d1016;
+  --ready-fg: #74dca3; --ready-bg: #12301f; --ready-border: #2d6b4a;
+  --review-fg: #f4b862; --review-bg: #3a2a0d; --review-border: #7d5a1f;
+  --escalate-fg: #ff9f97; --escalate-bg: #3e1815; --escalate-border: #85342e;
+  --fact-fg: #80cbea; --fact-bg: #11303e; --fact-border: #2d6580;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4); --shadow-2: 0 8px 24px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.04);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-ready: var(--ready-fg); --color-ready-bg: var(--ready-bg); --color-ready-line: var(--ready-border);
+  --color-review: var(--review-fg); --color-review-bg: var(--review-bg); --color-review-line: var(--review-border);
+  --color-escalate: var(--escalate-fg); --color-escalate-bg: var(--escalate-bg); --color-escalate-line: var(--escalate-border);
+  --color-fact: var(--fact-fg); --color-fact-bg: var(--fact-bg); --color-fact-line: var(--fact-border);
+  --shadow-e1: var(--shadow-1);
+  --shadow-e2: var(--shadow-2);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-serif: var(--font-source-serif), "Iowan Old Style", Georgia, serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Type scale 12 / 13 / 15 / 17 / 20 / 26: nothing below 12 px. */
+@theme {
+  --text-xs: 0.75rem;   --text-xs--line-height: 1.4;
+  --text-sm: 0.8125rem; --text-sm--line-height: 1.5;
+  --text-base: 0.9375rem; --text-base--line-height: 1.55;
+  --text-lg: 1.0625rem; --text-lg--line-height: 1.45;
+  --text-xl: 1.25rem;   --text-xl--line-height: 1.35;
+  --text-2xl: 1.625rem; --text-2xl--line-height: 1.25;
+  --radius-card: 12px;
+}
+
+html { background: var(--bg); }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-sans); font-size: 15px; line-height: 1.55;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.012em; }
+.num, time, td.num { font-variant-numeric: tabular-nums; }
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--accent-soft); }
+
+/* ---------- The draft letter: three kinds of content stay visibly different ---------- */
+.letter { font-family: var(--font-serif); font-size: 1.0625rem; line-height: 1.8; max-width: 64ch; color: var(--text); }
+.letter .seg-text { white-space: pre-wrap; }
+.seg-quote .meta { margin-top: 8px; }
+.seg-fact {
+  font-family: var(--font-sans); font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--fact-fg); background: var(--fact-bg); border-radius: 4px; padding: 0 4px;
+  text-decoration: underline dotted 2px; text-underline-offset: 4px; text-decoration-color: var(--fact-line);
+}
+.seg-fact:hover, .seg-fact:focus-visible { text-decoration-style: solid; }
+.seg-fact.pending { color: var(--review-fg); background: var(--review-bg); text-decoration-color: var(--review-border); }
+.seg-fact.failed { color: var(--escalate-fg); background: var(--escalate-bg); text-decoration-color: var(--escalate-border); }
+.seg-quote {
+  display: block; width: 100%; text-align: left; margin: 14px 0; padding: 12px 16px;
+  border-radius: 8px; border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  background: var(--bg-subtle); font-style: italic; line-height: 1.7;
+}
+.seg-quote:hover { border-color: var(--border-strong); border-left-color: var(--accent); }
+.seg-quote .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font: 500 0.75rem/1.4 var(--font-sans); font-style: normal; color: var(--text-muted); }
+.seg-quote .badge { font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; }
+
+/* The evidence row that a chip or quote points to. */
+.ev-flash { animation: ev-flash 1400ms ease-out; }
+@keyframes ev-flash { 0%, 55% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
+
+/* Motion: short, answers a user action, and disabled for people who ask for less. */
+.t { transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out; }
+.pop { animation: pop 140ms ease-out; }
+@keyframes pop { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.skeleton { background: linear-gradient(90deg, var(--bg-subtle), var(--border), var(--bg-subtle)); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 6px; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* Thin scrollbars that follow the theme. */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }

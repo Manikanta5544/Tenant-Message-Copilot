@@ -1,0 +1,56 @@
+name: ci
+on: { pull_request: {}, push: { branches: [main] } }
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: copilot_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL_OWNER: postgres://postgres:postgres@localhost:5432/copilot_test
+      TEST_DATABASE_URL_APP: postgres://copilot_app:app@localhost:5432/copilot_test
+      DATABASE_URL_OWNER: postgres://postgres:postgres@localhost:5432/copilot_test
+      DATABASE_URL_APP: postgres://copilot_app:app@localhost:5432/copilot_test
+      DEMO_AS_OF_DATE: "2026-11-19"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test                 # unit + database + isolation tests; no model calls
+      - run: npm run eval:mock        # critical-20 through the real pipeline on the labelled mock; fails on any S0
+      - name: Replay recorded real model responses (only when recordings are committed)
+        run: |
+          if [ -s evals/fixtures/recorded.json ]; then npm run eval:replay; else echo "no recordings committed: replay skipped (unverified)"; fi
+      - run: npm run build
+  live-eval:
+    # Spends free-tier quota: only on main or by hand. Needs the LLM_API_KEY repository secret.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: copilot }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL_OWNER: postgres://postgres:postgres@localhost:5432/copilot
+      DATABASE_URL_APP: postgres://copilot_app:app@localhost:5432/copilot
+      APP_ROLE_PASSWORD: app
+      PROVIDER_MODE: live
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_REASONING_EFFORT: low
+      LLM_OUTPUT_HEADROOM: "1000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run migrate && npm run seed
+      - run: npm run models           # fail fast if a configured model ID is not available to this key
+      - run: npm run eval             # gate: any S0 fails; S1 may not rise against the last saved live run
