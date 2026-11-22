@@ -4,7 +4,7 @@ import { Avatar } from "./ui/Avatar";
 import { Chip, StatusPill } from "./ui/Chip";
 import { cx } from "./ui/cx";
 
-export default function InboxRow({ m, selected, onSelect }: { m: Row; selected: boolean; onSelect: (r: Row) => void }) {
+export default function InboxRow({ m, selected, unread, onSelect }: { m: Row; selected: boolean; unread: boolean; onSelect: (r: Row) => void }) {
   return (
     <button type="button" data-inbox-row onClick={() => onSelect(m)} aria-current={selected ? "true" : undefined}
       className={cx("t relative flex min-h-11 w-full gap-3 px-3 py-3 text-left hover:bg-bg-subtle focus-visible:bg-bg-subtle", selected && "bg-accent-soft hover:bg-accent-soft")}>
@@ -12,7 +12,8 @@ export default function InboxRow({ m, selected, onSelect }: { m: Row; selected: 
       <Avatar name={m.resident_name} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">
-          <span className="truncate text-base font-semibold">{m.resident_name}</span>
+          {unread && <span className="size-2 shrink-0 self-center rounded-full bg-accent"><span className="sr-only">Unread. </span></span>}
+          <span className={cx("truncate text-base", unread ? "font-semibold" : "font-medium")}>{m.resident_name}</span>
           <span className="num shrink-0 text-sm text-muted">Unit {m.unit}</span>
           <time dateTime={m.created_at} className="ml-auto shrink-0 text-sm text-faint">{ago(m.created_at)}</time>
         </span>

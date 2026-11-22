@@ -11,7 +11,7 @@ const T: Record<Tone, string> = {
   accent: "bg-accent-soft text-accent border-transparent",
 };
 export function Chip({ tone = "neutral", icon, children, title, className }: { tone?: Tone; icon?: string; children: React.ReactNode; title?: string; className?: string }) {
-  return <span title={title} className={cx("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium leading-5", T[tone], className)}>{icon && <Icon name={icon} size={12} />}{children}</span>;
+  return <span title={title} className={cx("inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium leading-5", T[tone], className)}>{icon && <Icon name={icon} size={12} />}{children}</span>;
 }
 
 const ROUTE: Record<string, { tone: Tone; icon: string; label: string }> = {

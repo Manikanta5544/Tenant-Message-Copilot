@@ -7,6 +7,7 @@ import DecisionCard from "./DecisionCard";
 import DraftLetter from "./DraftLetter";
 import EvidencePanel from "./EvidencePanel";
 import MessageHeader from "./MessageHeader";
+import ReviewHistory from "./ReviewHistory";
 import RouteReasons from "./RouteReasons";
 import RunStatus from "./RunStatus";
 import TraceTable from "./TraceTable";
@@ -16,7 +17,7 @@ import { Tabs } from "./ui/Tabs";
 type Tab = "draft" | "verification" | "trace";
 
 /** Detail pane: sticky message header, decision card, then tabs. Data fetching lives in Workbench; this only presents a RunState. */
-export default function Workspace({ row, state, onGenerate, onBack }: { row: InboxRow; state: RunState; onGenerate: () => void; onBack: () => void }) {
+export default function Workspace({ row, state, onGenerate, onBack, onReview }: { row: InboxRow; state: RunState; onGenerate: () => void; onBack: () => void; onReview: (runId: string, a: { action: "approved" | "edited"; edited_text?: string }) => Promise<{ ok: true } | { ok: false; reason: string }> }) {
   const [tab, setTab] = useState<Tab>("draft");
   const [open, setOpen] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ id: string; n: number } | null>(null);
@@ -38,7 +39,8 @@ export default function Workspace({ row, state, onGenerate, onBack }: { row: Inb
           <div role="tabpanel" id={`ws-panel-${tab}`} aria-labelledby={`ws-tab-${tab}`} className="space-y-5">
             {tab === "draft" && (
               <>
-                <DraftLetter key={state.run.id} run={state.run} segs={segs} facts={facts} onOpen={openEvidence} onGenerate={onGenerate} />
+                {state.run.route === "escalate_only" ? null : <DraftLetter key={state.run.id} run={state.run} segs={segs} facts={facts} reviews={state.reviews} onOpen={openEvidence} onGenerate={onGenerate} onReview={(a) => onReview(state.run.id, a)} />}
+                <ReviewHistory reviews={state.reviews} currentRunId={state.run.id} />
                 <EvidencePanel facts={referenced} open={open} onToggle={setOpen} flash={flash} />
                 <RouteReasons run={state.run} />
               </>
