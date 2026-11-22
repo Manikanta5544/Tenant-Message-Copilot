@@ -1,3 +1,4 @@
+import { getEnv } from "../core/env";
 // Synthetic seed data. Every person, unit, payment and clause below is fictional.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -163,7 +164,18 @@ export async function seed(ownerUrl: string): Promise<void> {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const url = process.env.DATABASE_URL_OWNER;
+  const url = getEnv().DATABASE_URL_OWNER;
   if (!url) { console.error("DATABASE_URL_OWNER is not set."); process.exit(1); }
-  seed(url).then(() => console.log("seeded"), (e) => { console.error(e.message); process.exit(1); });
+  // Seed the data (owner connection), then create the baseline runs through the app role with the configured provider (D3).
+  // `--no-baselines` skips the second step (no model call). In production the provider is live: the baselines are real model output.
+  seed(url).then(async () => {
+    console.log("seeded");
+    if (process.argv.includes("--no-baselines")) return;
+    const { createProvider } = await import("../app/server/provider");
+    const { seedBaselines } = await import("./baselines");
+    const { closeAllPools } = await import("./client");
+    const r = await seedBaselines(createProvider(), (m) => console.log(m));
+    await closeAllPools();
+    console.log(`baselines: ${r.created} created, ${r.kept} already present`);
+  }).catch((e) => { console.error(e.message); process.exit(1); });
 }

@@ -1,3 +1,4 @@
+import { getEnv } from "@/core/env";
 // Runtime database access. Every query runs inside a transaction whose first statement sets the
 // transaction-local scope (set_config(..., true)), so it works on Neon's transaction pooler.
 // Neon hosts use @neondatabase/serverless (Pool over WebSocket); any other host (local Postgres, CI)
@@ -48,7 +49,7 @@ export async function closeAllPools() {
 }
 
 export function appUrl(): string {
-  const u = process.env.DATABASE_URL_APP;
+  const u = getEnv().DATABASE_URL_APP;
   if (!u) throw new Error("DATABASE_URL_APP is not set");
   return u;
 }

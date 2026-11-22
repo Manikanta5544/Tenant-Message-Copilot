@@ -1,3 +1,4 @@
+import { getEnv } from "../core/env";
 // Applies db/migrations/*.sql in order over the DIRECT owner connection (never the pooler).
 import fs from "node:fs";
 import path from "node:path";
@@ -41,9 +42,9 @@ export async function migrate(ownerUrl: string, appRolePassword?: string): Promi
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const url = process.env.DATABASE_URL_OWNER;
+  const url = getEnv().DATABASE_URL_OWNER;
   if (!url) { console.error("DATABASE_URL_OWNER is not set (direct owner connection)."); process.exit(1); }
-  migrate(url, process.env.APP_ROLE_PASSWORD).then(
+  migrate(url, getEnv().APP_ROLE_PASSWORD).then(
     (a) => console.log(a.length ? `applied: ${a.join(", ")}` : "up to date"),
     (e) => { console.error(e.message); process.exit(1); },
   );

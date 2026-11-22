@@ -1,8 +1,10 @@
+import { getEnv } from "@/core/env";
 // Run service: messages, runs and trace events. Reads for the manager inbox use the read-only inbox
 // view scope; every write, and every pipeline query, uses the strict organisation + resident scope
 // taken from the stored message row, never from the request or the model.
 import { createHash, randomUUID } from "node:crypto";
 import { budgetDay, dailyBudgetMicroUsd, demoAsOf, maxMessagesPerHour, maxRunsPerDay, maxRunsPerHour, maxRunsPerVisitorPerDay } from "@/core/config";
+import { logRun, visitorPrefix } from "@/core/log";
 import { redact } from "@/core/redact";
 import { runPipeline, type PipelineOutput, type TraceEvent } from "@/core/pipeline";
 import type { LLMProvider } from "@/core/provider";
@@ -21,14 +23,17 @@ export interface InboxRow {
   run: null | { id: string; intent: string | null; urgency: string | null; language: string | null; route: string | null; status: string; mode: string };
 }
 
-/** Seeded scenarios plus the caller's own live messages; other visitors' messages are never shown. */
+/** Seeded scenarios plus the caller's own live messages; other visitors' messages are never shown.
+ *  Per message, the run shown is the caller's own latest, else the shared baseline run (decision D3). */
 export async function listInbox(visitor: string | null = null): Promise<InboxRow[]> {
   return withScope(appUrl(), { orgId: DEMO_ORG_ID, view: "inbox" }, async (db) => {
     const r = await db.query(`
       SELECT m.id AS message_id, m.text, m.created_at, m.scenario_label, m.source, r.id AS resident_id, r.name AS resident_name, r.unit, r.preferred_language,
              lr.id AS run_id, lr.intent, lr.urgency, lr.language, lr.route, lr.status, lr.mode
         FROM messages m JOIN residents r ON r.id = m.resident_id
-        LEFT JOIN LATERAL (SELECT * FROM runs WHERE message_id = m.id ORDER BY created_at DESC LIMIT 1) lr ON true
+        -- D3: the visitor's own latest run if one exists, otherwise the shared baseline (visitor_hash IS NULL). A visitor's run never alters what others see.
+        LEFT JOIN LATERAL (SELECT * FROM runs WHERE message_id = m.id AND (visitor_hash = $1 OR visitor_hash IS NULL)
+                            ORDER BY (visitor_hash IS NULL), created_at DESC LIMIT 1) lr ON true
        WHERE m.source = 'seeded' OR (m.visitor_hash IS NOT NULL AND m.visitor_hash = $1)
        ORDER BY (m.scenario_label IS NULL), m.scenario_label, m.created_at DESC`, [visitor]);
     return r.rows.map((x) => ({
@@ -64,7 +69,7 @@ export async function createMessage(residentId: string, text: string, visitor: s
 export class HttpError extends Error { constructor(public status: number, message: string, public extra?: Record<string, unknown>) { super(message); } }
 
 /** IP only: the User-Agent is attacker-controlled, so hashing it would let anyone dodge the limit by changing it. */
-export const visitorHash = (ip: string) => createHash("sha256").update(`${process.env.VISITOR_SALT ?? "demo"}|${ip}`).digest("hex").slice(0, 32);
+export const visitorHash = (ip: string) => createHash("sha256").update(`${getEnv().VISITOR_SALT ?? "demo"}|${ip}`).digest("hex").slice(0, 32);
 
 export async function recentRunCount(hash: string, windowMinutes: number): Promise<number> {
   return withScope(appUrl(), { orgId: DEMO_ORG_ID, view: "inbox" }, async (db) =>
@@ -161,14 +166,16 @@ export async function createRun(a: { messageId: string; idempotencyKey: string; 
     if (inserted.message_id !== msg.id) throw new HttpError(409, "idempotency key already used for a different message");
     return { runId: inserted.id, created: false, execute: null };
   }
-  return { runId, created: true, execute: () => executeRun({ runId, msg, scope, asOf, provider: a.provider }) };
+  return { runId, created: true, execute: () => executeRun({ runId, msg, scope, asOf, provider: a.provider, visitor: a.visitor }) };
 }
 
-async function executeRun(c: { runId: string; msg: { id: string; text: string; resident_id: string; unit: string; preferred_language: Language }; scope: { orgId: string; residentId: string }; asOf: string; provider: LLMProvider }): Promise<void> {
+async function executeRun(c: { runId: string; msg: { id: string; text: string; resident_id: string; unit: string; preferred_language: Language }; scope: { orgId: string; residentId: string }; asOf: string; provider: LLMProvider; visitor: string | null }): Promise<void> {
   const url = appUrl();
   const { runId, msg, scope, asOf } = c;
   let seq = 0;
+  const stages: Record<string, number> = {}; let tin = 0, tout = 0, cost = 0;
   const emit = async (e: TraceEvent) => {
+    stages[e.stage] = Math.round((stages[e.stage] ?? 0) + (e.latency_ms ?? 0)); tin += e.tokens_in ?? 0; tout += e.tokens_out ?? 0; cost += e.cost_micro_usd ?? 0;
     // One statement and one round trip: the scope is set in a CTE that the INSERT reads from, so row security sees it.
     // Saved before it is emitted anywhere else.
     const pool = await getPool(url);
@@ -192,7 +199,9 @@ async function executeRun(c: { runId: string; msg: { id: string; text: string; r
     await withScope(url, scope, (db) => db.query(
       `UPDATE runs SET mode=$2, intent=$3, urgency=$4, language=$5, route=$6, route_reasons=$7, segments=$8, facts=$9, verification=$10, flags=$11, status='completed', finished_at=now() WHERE id=$1`,
       [runId, o.mode, o.intent, o.urgency, o.language, o.route, JSON.stringify(o.reasons), JSON.stringify(o.rendered), JSON.stringify(o.bundle.facts), JSON.stringify(o.verification), JSON.stringify(o.flags)]));
+    logRun({ run_id: runId, route: o.route, outcome: "completed", mode: o.mode, stage_latency_ms: stages, tokens_in: tin, tokens_out: tout, cost_micro_usd: cost, visitor: visitorPrefix(c.visitor) });
   } catch (e) {
+    logRun({ run_id: runId, route: null, outcome: "failed", mode: null, stage_latency_ms: stages, tokens_in: tin, tokens_out: tout, cost_micro_usd: cost, visitor: visitorPrefix(c.visitor), error: e instanceof Error ? e.name : "error" });
     await withScope(url, scope, (db) => db.query(`UPDATE runs SET status='failed', finished_at=now() WHERE id=$1`, [runId])).catch(() => {});
     throw e;
   }
