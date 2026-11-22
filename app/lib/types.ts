@@ -1,5 +1,6 @@
 // Client-side shapes of the API responses (type-only imports: no server code reaches the browser).
 export type { InboxRow, RunView, TraceRow } from "@/db/runs";
+export type { ReviewRow } from "@/db/review";
 export type Route = "draft_ready" | "needs_review" | "escalate_only";
 export interface Seg { type: "text" | "fact" | "quote"; text: string; refId?: string; kind?: string; cite?: string }
 export interface LayerView { layer: number; name: string; ok: boolean; effect: string; issues: string[]; skipped?: boolean; critical?: boolean }

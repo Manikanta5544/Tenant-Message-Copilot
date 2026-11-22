@@ -8,6 +8,8 @@ import { Icon } from "../components/ui/Icon";
 import { cx } from "../components/ui/cx";
 import { usd } from "../lib/format";
 
+import { getEnv } from "@/core/env";
+
 export const dynamic = "force-dynamic";
 type Run = Awaited<ReturnType<typeof latestEvalRuns>>[number];
 type Cat = { total: number; passed: number; s0: number; s1: number; s2: number };
@@ -57,6 +59,7 @@ export default async function EvalsPage() {
 }
 
 function Latest({ r }: { r: Run }) {
+  const repo = getEnv().REPO_URL;
   const s = r.summary, results = r.results as CaseResult[];
   const failed = results.filter((x) => !x.pass);
   const ok = !!s.gate?.ok;
@@ -73,7 +76,7 @@ function Latest({ r }: { r: Run }) {
             <h2 className={cx("text-2xl", ok ? "text-ready" : "text-escalate")}>Gate {ok ? "PASS" : "FAIL"}</h2>
             <p className="text-base text-muted">Critical cases, latest run · {s.passed} of {s.total} passed</p>
           </div>
-          <div className="ml-auto flex flex-wrap items-center gap-2"><ModeChip mode={r.mode} /><Chip>prompt {r.prompt_version}</Chip>{r.git_commit && <Chip>commit {r.git_commit}</Chip>}</div>
+          <div className="ml-auto flex flex-wrap items-center gap-2"><ModeChip mode={r.mode} /><Chip>prompt {r.prompt_version}</Chip>{r.git_commit && (repo ? <a href={`${repo.replace(/\/$/, "")}/commit/${r.git_commit}`} className="rounded-full focus-visible:outline-none"><Chip tone="accent">commit {r.git_commit}</Chip></a> : <Chip>commit {r.git_commit}</Chip>)}</div>
         </div>
         {!ok && (s.gate?.reasons ?? []).length > 0 && <ul className="mt-3 list-disc space-y-0.5 pl-5 text-base text-escalate">{(s.gate.reasons as string[]).map((x, i) => <li key={i}>{x}</li>)}</ul>}
         <p className="num mt-3 text-sm text-muted">{when(r.created_at)} · as of {s.as_of} · {s.previous_s1_cases !== null && s.previous_s1_cases !== undefined ? `previous saved S1: ${s.previous_s1_cases}` : "no earlier run of this mode to compare"}</p>
