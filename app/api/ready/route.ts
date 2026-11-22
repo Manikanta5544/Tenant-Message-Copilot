@@ -1,8 +1,7 @@
 import { appUrl, withScope } from "@/db/client";
 import { DEMO_ORG_ID } from "@/db/ids";
 import { MIGRATIONS } from "@/db/manifest";
-import { liveConfigured } from "@/app/server/provider";
-import { providerMode } from "@/core/config";
+import { bootStatus, getEnv } from "@/core/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,11 +27,8 @@ export async function GET() {
   } catch {
     checks.database = { ok: false, detail: "database unreachable" };
   }
-  const prod = process.env.NODE_ENV === "production";
-  const salt = process.env.VISITOR_SALT;
-  checks.visitor_salt = !prod || (salt && salt !== "change-me" && salt !== "demo") ? { ok: true } : { ok: false, detail: "set VISITOR_SALT to a random value" };
-  const mode = providerMode();
-  checks.provider_config = mode !== "live" || liveConfigured() ? { ok: true, detail: mode } : { ok: false, detail: "PROVIDER_MODE=live but no LLM key is set" };
+  const boot = bootStatus();
+  checks.configuration = boot.ok ? { ok: true, detail: getEnv().PROVIDER_MODE } : { ok: false, detail: boot.problems.join("; ") };
 
   const ok = Object.values(checks).every((c) => c.ok);
   return Response.json({ status: ok ? "ready" : "not_ready", checks }, { status: ok ? 200 : 503 });

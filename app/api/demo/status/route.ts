@@ -1,3 +1,4 @@
+import { bootStatus, getEnv } from "@/core/env";
 import { backend, liveConfigured } from "@/app/server/provider";
 import { budgetDay, dailyBudgetMicroUsd, demoAsOf, maxRunsPerDay, providerMode } from "@/core/config";
 import { modelAvailability } from "@/core/providers/openai-compat";
@@ -24,7 +25,7 @@ async function probeProvider(): Promise<Health> {
   if (!liveConfigured()) return { provider: "not_configured", models: null };
   try {
     if (backend() === "anthropic") {
-      const r = await fetch("https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" }, signal: AbortSignal.timeout(3000) });
+      const r = await fetch("https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": getEnv().ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" }, signal: AbortSignal.timeout(3000) });
       return { provider: r.ok ? "reachable" : "unreachable", models: null };
     }
     const av = await modelAvailability();
@@ -34,6 +35,8 @@ async function probeProvider(): Promise<Health> {
 }
 
 export async function GET() {
+  const boot = bootStatus();
+  if (!boot.ok) return Response.json({ maintenance: true }, { status: 503 });
   const cap = dailyBudgetMicroUsd();
   const day = budgetDay();
   let remaining: number | null = null, runsUsed: number | null = null;
@@ -51,7 +54,7 @@ export async function GET() {
     as_of: demoAsOf(),
     provider_mode: mode,
     // Setup slip: a key is present but the app is not in live mode (env is read at start, so a restart is needed).
-    mock_with_key: mode !== "live" && !!(process.env.LLM_API_KEY || process.env.ANTHROPIC_API_KEY),
+    mock_with_key: mode !== "live" && !!(getEnv().LLM_API_KEY || getEnv().ANTHROPIC_API_KEY),
     provider_backend: mode === "live" ? backend() : null,
     provider: mode === "live" ? h.provider : "not_used",
     models: mode === "live" ? h.models : null,
