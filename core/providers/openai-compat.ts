@@ -1,3 +1,4 @@
+import { parseEnv, rawEnv, type RawEnv } from "../env";
 // Provider for any OpenAI-compatible chat-completions endpoint: Groq, OpenRouter, Together, Gemini's
 // OpenAI endpoint, a local Ollama or vLLM server. Structured output uses JSON mode plus the JSON
 // schema in the prompt (the most widely supported option); the pipeline re-validates everything, so a
@@ -116,28 +117,29 @@ function stripFence(s: string): string {
 /** Default model IDs are what Groq lists today (the Llama 3.x IDs were shut down 16 Aug 2026). UNVERIFIED against your account: run `npm run models` to list what your key can use. */
 export const DEFAULT_MODELS = { fast: "openai/gpt-oss-20b", strong: "openai/gpt-oss-120b" };
 
-export function openAICompatFromEnv(env = process.env): OpenAICompatProvider {
+export function openAICompatFromEnv(raw: RawEnv = rawEnv()): OpenAICompatProvider {
+  const env = parseEnv(raw, { crossCheck: false });
   const model = env.LLM_MODEL ?? DEFAULT_MODELS.strong;
-  const effort = env.LLM_REASONING_EFFORT as "low" | "medium" | "high" | undefined;
   return new OpenAICompatProvider({
-    baseUrl: env.LLM_BASE_URL ?? "https://api.groq.com/openai/v1",
+    baseUrl: env.LLM_BASE_URL,
     apiKey: env.LLM_API_KEY ?? "",
     models: { triage: env.LLM_MODEL_TRIAGE ?? env.LLM_MODEL_FAST ?? DEFAULT_MODELS.fast, draft: env.LLM_MODEL_DRAFT ?? model, check: env.LLM_MODEL_CHECK ?? env.LLM_MODEL_FAST ?? DEFAULT_MODELS.fast },
     prices: env.LLM_PRICES_JSON ? JSON.parse(env.LLM_PRICES_JSON) : undefined,
     jsonMode: env.LLM_JSON_MODE !== "false",
-    reasoningEffort: effort && ["low", "medium", "high"].includes(effort) ? effort : undefined,
-    outputHeadroom: Number(env.LLM_OUTPUT_HEADROOM ?? 0) || 0,
+    reasoningEffort: env.LLM_REASONING_EFFORT,
+    outputHeadroom: env.LLM_OUTPUT_HEADROOM,
   });
 }
 
 export type ModelRole = "triage" | "draft" | "check";
 /** Lists the models the key can use (a metadata call, no tokens) and reports each configured role. */
-export async function modelAvailability(env = process.env, f: typeof fetch = fetch): Promise<{ ok: boolean; listed: boolean; roles: Record<ModelRole, { model: string; available: boolean | null }> }> {
-  const cfg = openAICompatFromEnv({ ...env, LLM_API_KEY: env.LLM_API_KEY || "x" });
+export async function modelAvailability(raw: RawEnv = rawEnv(), f: typeof fetch = fetch): Promise<{ ok: boolean; listed: boolean; roles: Record<ModelRole, { model: string; available: boolean | null }> }> {
+  const env = parseEnv(raw, { crossCheck: false });
+  const cfg = openAICompatFromEnv({ ...raw, LLM_API_KEY: raw.LLM_API_KEY || "x" });
   const models = (cfg as unknown as { c: OpenAICompatConfig }).c.models;
   let ids: Set<string> | null = null;
   try {
-    const r = await f(`${(env.LLM_BASE_URL ?? "https://api.groq.com/openai/v1").replace(/\/$/, "")}/models`, { headers: { authorization: `Bearer ${env.LLM_API_KEY}` }, signal: AbortSignal.timeout(4000) });
+    const r = await f(`${env.LLM_BASE_URL.replace(/\/$/, "")}/models`, { headers: { authorization: `Bearer ${env.LLM_API_KEY}` }, signal: AbortSignal.timeout(4000) });
     if (r.ok) ids = new Set(((await r.json()) as { data?: { id: string }[] }).data?.map((m) => m.id) ?? []);
   } catch { /* unreachable: availability unknown */ }
   const roles = Object.fromEntries((Object.keys(models) as ModelRole[]).map((k) => [k, { model: models[k], available: ids ? ids.has(models[k]) : null }])) as Record<ModelRole, { model: string; available: boolean | null }>;

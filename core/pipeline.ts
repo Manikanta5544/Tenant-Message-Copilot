@@ -1,6 +1,7 @@
 // The explicit state machine: reserve budget -> triage -> evidence tools -> draft -> verify (six
 // layers) -> route. Pure orchestration: storage, budget and trace sinks are injected, nothing here
 // reads the clock (callers pass asOf and a `now` for latency), the environment or the database.
+import { REASON } from "./reasons";
 import {
   FactIds, buildLeaseTermFacts, kindsIn, renderDraft, renderPlain, type Draft, type RenderedSegment,
 } from "./facts";
@@ -214,7 +215,7 @@ export async function runPipeline(deps: PipelineDeps, input: PipelineInput): Pro
       const verification = LAYER_NAMES.map((_, i) => skipped((i + 1) as LayerResult["layer"], "blocked before drafting"));
       verification[2] = l3;
       await emit({ stage: "critical_incident", outcome: "balance_mismatch", payload: { issues: l3.issues } });
-      const out = finish({ ...common, kind: "escalation", mode: "fallback", flags: [...flagsBase, "critical_incident"], bundle, tools: records, verification, critical: true, forced: true, extraReasons: ["balance cross-check failed"] });
+      const out = finish({ ...common, kind: "escalation", mode: "fallback", flags: [...flagsBase, "critical_incident"], bundle, tools: records, verification, critical: true, forced: true, extraReasons: [REASON.balanceCrosscheck] });
       await emit({ stage: "route", outcome: out.route, payload: { reasons: out.reasons, flags: out.flags } });
       return out;
     }
@@ -253,7 +254,7 @@ export async function runPipeline(deps: PipelineDeps, input: PipelineInput): Pro
       const why = conflicting ? "conflicting_clauses" : insufficient ? "insufficient_evidence" : "no_evidence";
       const verification = LAYER_NAMES.map((_, i) => skipped((i + 1) as LayerResult["layer"], "holding reply: no model draft"));
       verification[5] = { layer: 6, name: "abstention", ok: false, effect: "none", issues: [conflicting ? "two or more clauses may conflict; manager to decide" : insufficient ? "retrieved clauses do not settle the question; manager to decide" : `evidence missing: ${missing.join(", ") || "lease"}`] };
-      const out = finish({ ...common, kind: "holding", flags: [...flagsBase, why], reviewFloor: true, bundle, tools: records, verification, extraReasons: [conflicting ? "possible conflicting clauses" : insufficient ? "retrieved clauses insufficient" : "evidence missing"] });
+      const out = finish({ ...common, kind: "holding", flags: [...flagsBase, why], reviewFloor: true, bundle, tools: records, verification, extraReasons: [conflicting ? REASON.conflictingClauses : insufficient ? REASON.insufficientClauses : REASON.evidenceMissing] });
       await emit({ stage: "abstention", outcome: why, payload: { missing } });
       await emit({ stage: "route", outcome: out.route, payload: { reasons: out.reasons, flags: out.flags } });
       return out;
@@ -303,7 +304,7 @@ export async function runPipeline(deps: PipelineDeps, input: PipelineInput): Pro
     }
     if (!draft) {
       const filled = LAYER_NAMES.map((n, i) => verification.find((l) => l.layer === i + 1) ?? skipped((i + 1) as LayerResult["layer"], "not reached"));
-      const out = finish({ ...common, kind: "escalation", mode: "fallback", flags: [...flagsBase, "verification_failed", ...(critical ? ["critical_incident"] : [])], bundle, tools: records, verification: filled, critical, forced: true, extraReasons: [critical ? "balance cross-check failed" : "verification failed twice"] });
+      const out = finish({ ...common, kind: "escalation", mode: "fallback", flags: [...flagsBase, "verification_failed", ...(critical ? ["critical_incident"] : [])], bundle, tools: records, verification: filled, critical, forced: true, extraReasons: [critical ? REASON.balanceCrosscheck : REASON.verificationFailedTwice] });
       await emit({ stage: "route", outcome: out.route, payload: { reasons: out.reasons, flags: out.flags } });
       return out;
     }

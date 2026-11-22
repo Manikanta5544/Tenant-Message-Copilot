@@ -1,6 +1,7 @@
 // Deterministic routing. The final route is the most cautious of every signal, so a model
 // (or a verifier layer) can only make a run safer, never less safe.
 import type { Intent } from "./policy";
+import { REASON } from "./reasons";
 import type { Route } from "./types";
 
 export const ROUTE_RANK: Record<Route, number> = { draft_ready: 0, needs_review: 1, escalate_only: 2 };
@@ -21,6 +22,7 @@ export const INTENT_ROUTE: Record<Intent, Route> = {
 
 // ---------- keyword floors: English, Hindi, Telugu and Hinglish. They can only raise risk. ----------
 export type FloorCode = "legal" | "eviction" | "police" | "deposit_dispute" | "injection" | "other_resident" | "urgent_hazard" | "waiver";
+export const FLOOR_CODES: FloorCode[] = ["legal", "eviction", "police", "deposit_dispute", "injection", "other_resident", "urgent_hazard", "waiver"];
 const W = (s: string) => new RegExp(s, "iu");
 
 const FLOORS: { code: FloorCode; route: Route; re: RegExp }[] = [
@@ -86,11 +88,11 @@ export function computeRoute(s: RouteSignals): { route: Route; reasons: string[]
   const raise = (r: Route, why: string) => { if (ROUTE_RANK[r] > ROUTE_RANK[route]) route = r; if (ROUTE_RANK[r] > 0) reasons.push(why); };
   raise(s.intentRoute, `intent table: ${s.intentRoute}`);
   for (const f of s.floors) raise(f.route, `keyword floor: ${f.code}`);
-  raise(s.verifierRoute, "verification failed");
-  raise(s.semanticRoute, "semantic check could not confirm the draft");
+  raise(s.verifierRoute, REASON.verificationFailed);
+  raise(s.semanticRoute, REASON.semanticUnconfirmed);
   if (s.modelSuggestion) raise(s.modelSuggestion, `model suggested ${s.modelSuggestion}`);
-  if (s.hasMoneyFact) raise("needs_review", "draft contains a money fact");
-  if (s.reviewFloor) raise("needs_review", "items flagged for review");
-  if (s.forcedEscalation) raise("escalate_only", "provider or budget unavailable: template reply");
+  if (s.hasMoneyFact) raise("needs_review", REASON.moneyFact);
+  if (s.reviewFloor) raise("needs_review", REASON.flaggedForReview);
+  if (s.forcedEscalation) raise("escalate_only", REASON.templateForced);
   return { route, reasons: [...new Set(reasons)] };
 }

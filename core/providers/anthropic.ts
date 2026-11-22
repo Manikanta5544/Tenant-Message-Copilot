@@ -1,3 +1,4 @@
+import { getEnv } from "../env";
 // Anthropic SDK behind LLMProvider. Structured output is a forced tool call whose input must match
 // our Zod-derived JSON schema; the pipeline re-validates everything. One SDK retry (429/5xx, honours retry-after); failures map
 // to the four ProviderError kinds and the pipeline falls back to a template reply.
@@ -21,7 +22,7 @@ export class AnthropicProvider implements LLMProvider {
   private timeouts: NonNullable<AnthropicOptions["timeoutMs"]>;
   private now: () => number;
   constructor(opts: AnthropicOptions = {}) {
-    this.client = new Anthropic({ apiKey: opts.apiKey ?? process.env.ANTHROPIC_API_KEY, maxRetries: 1 });
+    this.client = new Anthropic({ apiKey: opts.apiKey ?? getEnv().ANTHROPIC_API_KEY, maxRetries: 1 });
     this.timeouts = opts.timeoutMs ?? DEFAULT_TIMEOUTS;
     this.now = opts.now ?? (() => performance.now());
   }
