@@ -112,7 +112,7 @@ button:disabled { cursor: not-allowed; }
 .seg-quote .meta { margin-top: 8px; }
 .seg-fact {
   font-family: var(--font-sans); font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums;
-  color: var(--fact-fg); background: var(--fact-bg); border-radius: 4px; padding: 0 4px;
+  color: var(--fact-fg); background: var(--fact-bg); border-radius: 4px; padding: 0 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone;
   text-decoration: underline dotted 2px; text-underline-offset: 4px; text-decoration-color: var(--fact-line);
 }
 .seg-fact:hover, .seg-fact:focus-visible { text-decoration-style: solid; }
