@@ -1,3 +1,4 @@
+import { getEnv } from "../core/env";
 // Eval runner: npm run eval (live) | eval:replay | eval:mock. Saves every run to eval_runs and exits
 // Tier 1 (critical) runs are saved by default; tier 2 (extended) only with --save-extended, so the Evals page headline is always the critical gate.
 // non-zero when the gate fails (any S0, or S1 above the previous saved run of the same mode).
@@ -62,7 +63,7 @@ export async function runEval(o: EvalOptions) {
   await owner.connect();
   const results: CaseResult[] = [];
   try {
-    const pace = o.paceMs ?? (o.mode === "live" ? Number(process.env.EVAL_PACE_MS ?? 2000) : 0);
+    const pace = o.paceMs ?? (o.mode === "live" ? getEnv().EVAL_PACE_MS : 0);
     for (const c of cases) {
       if (pace > 0 && results.length > 0) await new Promise((r) => setTimeout(r, pace));
       const org = c.org === "A" ? ORG_A : ORG_B;

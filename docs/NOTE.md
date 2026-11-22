@@ -1,21 +1,17 @@
 # Tenant Message Copilot: one-page note
 
-**What it does.** Reads one tenant message, gathers evidence from the lease and ledger through four bound tools, and drafts a reply for a human. Output: draft with evidence chips, a verification panel, a route. It never sends anything.
+**What it does.** Reads one tenant message, gathers evidence from the tenant's own lease and ledger, and drafts a reply for a property manager: a letter with evidence chips, a six-layer verification panel and a route (draft ready / needs review / escalate only). Nothing is ever sent. All data is synthetic.
 
-**What the model does and doesn't do.** It classifies, picks tools from a per-intent allowlist, and writes connective prose as `text`, `fact` and `quote` segments. It never writes an amount, date or lease quote; code renders them from the evidence bundle. Money is integer paise. Free text must pass a guard (no digits in any script, currency, number words, month names).
+**How to evaluate it.** Open `/`, click Scenario 1 to 5 (each has a stored baseline run), then *Generate again* (your own run, visible only to you). Read `/about` (one screen), the Trace tab, and `/evals`. Approve or edit a draft: the decision is recorded in an append-only log and survives reload. Run `npm run doctor`, `npm test`, `npm run eval:mock`.
 
-**Retrieval.** After clause search a model call keeps only relevant clauses and flags conflicts; it can remove evidence, never add it (mock results unchanged; live effect unverified).
+**Design.** The model writes only plain words plus references to evidence; code renders amounts (integer paise), dates and clause text. Verification: schema, evidence, exactness (TypeScript balance vs SQL view), policy, semantic (can only lower trust), abstention. The route is the most cautious of intent table, multilingual keyword floors, verifier, semantic check, model suggestion and money facts. Isolation is Postgres row-level security (two scopes, restricted role, FORCE RLS). Production refuses to start in mock mode; CSP is nonce-based.
 
-**Verification.** Six layers: schema, evidence (unknown/duplicate/out-of-scope fact IDs rejected), exactness (TypeScript balance against the SQL view), policy, semantic (can only lower trust), abstention. One retry, then an escalate-only template.
+**Measured (this repo, this sandbox).** Typecheck, lint, WCAG contrast (72 pairs) clean. 304 tests pass, 8 skipped (database tests ran against a local Postgres 16). Mock-model critical set: 20/20, S0 0, S1 0, which tests the application, not model quality. Mock all-50 still fails its gate (`abs-05`, a case that needs a real semantic check). Lighthouse accessibility 100 on `/`, `/evals`, `/about` (local Chromium). Playwright: security headers, nonce CSP with zero violations, no horizontal scroll 360 to 1920 px, review persistence, URL-addressable messages.
 
-**Isolation.** Postgres row-level security with two scopes, transaction-local settings, a restricted role, FORCE RLS, fail-closed. Org from server config; resident from the stored message; the model supplies no IDs.
+**Not verified (owner commands).** Live model results: none were produced here (no key, no network to the provider). Run `npm run doctor`, then `npm run eval`, then commit `evals/fixtures/recorded.json` and run `npm run eval:replay`. Neon: not run; `npm run verify:neon` per `docs/NEON.md`. Vercel deployment and the 60 s `maxDuration` on your plan. Turbopack build with real Google Fonts (verified here only with `--webpack` and mocked fonts; CI builds with the real path). Real Dark Reader extension (mutations simulated).
 
-**Routing.** Most cautious of intent table, multilingual keyword floors, verifier, semantic check, model suggestion, any money fact, review floor.
+**Known limits.** Guard gaps (README); quality and rate limits of free-tier models; one shared rate bucket when no trusted proxy is configured; review history is filtered by visitor in the application, while the database enforces organisation and resident scope; `style-src 'unsafe-inline'`.
 
-**Measured results (mock model only; tests the application, not model quality).** Critical 20: 20/20, S0 0, S1 0. All 50: 40/50, S0 1, S1 9, S2 7, gate FAIL (mock limits, one conservative conflict check, one open finding `abs-05` needing a real semantic check). 257 tests pass, 8 skipped. **Live model results: none. Replay: none. Neon isolation: not run.**
+**Accepted risks.** D5: the public demo has no login. `GET /api/runs/:id` is a UUID capability URL over synthetic data, read-only. Production alternative: SSO plus per-organisation RLS claims.
 
-**Judge calibration.** Not done (needs a live model): agreement with human labels: unverified.
-
-**Limitations.** Guard gaps (see README); no real-model verification; free-tier quality and rate limits; synthetic data only; no payment integration.
-
-**For a real customer.** Real lease and ledger ingestion with provenance; per-tenant keys and audit export; human-labelled eval set from real messages; calibrated semantic judge; retention and PII policy; reviewer feedback loop; load and rate-limit design; a second-reviewer rule for money and legal routes.
+**Next.** Real ingestion with provenance; human-labelled eval set and calibrated semantic judge; per-tenant keys and audit export; second-reviewer rule for money and legal routes; SSO and RLS claims.

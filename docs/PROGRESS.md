@@ -26,3 +26,9 @@
 
 ## Review rounds
 - Round 1 (fix plan) and round 2 (lock report) applied: see DECISIONS 31-43. 257 tests pass, 8 skipped (Neon). Remaining work needs the owner: LLM key, live eval + recordings, Neon/Vercel deploy.
+
+## Production-readiness pass
+- Phase 1 done: D1, D2, D6, D3, D4, rate-limit trust, input hardening, error pages, logs, deps, bundle scan.
+- Phase 2: doctor and prompt lock done. Live runs, recordings and live eval: NOT RUN (no key or network here).
+- Phase 3 done: reasons.ts, decision card, escalate state, review UI, URL selection, j/k, /about, evals links.
+- Phase 4 done: CI, RUNBOOK, NEON, verify:neon, NOTE. Neon and Vercel: not run.
