@@ -13,5 +13,5 @@ export async function POST(req: Request) {
   try {
     const b = await readJson(req, Body);
     return Response.json({ message_id: await createMessage(b.resident_id, b.text, visitorHash(clientKey(req).ip)) }, { status: 201 });
-  } catch (e) { return fail(e); }
+  } catch (e) { return fail(e, req); }
 }

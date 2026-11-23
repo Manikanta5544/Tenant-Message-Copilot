@@ -20,5 +20,5 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const b = await readJson(req, Body);
     const r = await recordReview({ runId, visitor: visitorHash(clientKey(req).ip), action: b.action, editedText: b.edited_text ?? null, idempotencyKey: b.idempotency_key });
     return Response.json({ review: r.review, created: r.created }, { status: r.created ? 201 : 200 });
-  } catch (e) { return fail(e); }
+  } catch (e) { return fail(e, req); }
 }

@@ -19,5 +19,5 @@ export async function POST(req: Request) {
     const h = await createRun({ messageId: b.message_id, idempotencyKey: b.idempotency_key, provider: createProvider(), visitor });
     if (h.execute) { const go = h.execute; after(() => go().catch((e) => console.error("[run] failed", e instanceof Error ? e.name : "error"))); }
     return Response.json({ run_id: h.runId, created: h.created }, { status: h.created ? 202 : 200 });
-  } catch (e) { return fail(e); }
+  } catch (e) { return fail(e, req); }
 }

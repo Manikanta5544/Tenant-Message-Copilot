@@ -20,5 +20,5 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const pipelineMs = r.trace.reduce((n, t) => n + t.latency_ms, 0);
     body.headers.set("Server-Timing", `db;dur=${dbMs.toFixed(1)}, pipeline;dur=${pipelineMs}`);
     return body;
-  } catch (e) { return fail(e); }
+  } catch (e) { return fail(e, req); }
 }
