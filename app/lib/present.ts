@@ -1,15 +1,8 @@
 import { formatInr } from "@/core/money";
 import type { Fact } from "@/core/types";
 
+export const fmtShort = (d: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
 export const fmtDate = (d: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
-
-/** Deterministic avatar colour from the token palette (never the status colours red or amber, which mean something). */
-const AVATAR = ["bg-accent-soft text-accent", "bg-fact-bg text-fact", "bg-ready-bg text-ready", "bg-bg-subtle text-text", "bg-accent-soft text-fact"];
-export function avatarTone(name: string): string {
-  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return AVATAR[h % AVATAR.length]!;
-}
-export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
 
 /** Where a value in the letter came from: shown in the hover/focus popover on a chip. */
 export function factSource(f: Fact | undefined): { title: string; lines: string[] } {

@@ -5,6 +5,11 @@ export const ago = (iso: string) => {
   const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
   return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} d ago`;
 };
+/** Short relative time for dense rows: "now", "5m", "3h", "2d". */
+export const agoShort = (iso: string) => {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
+};
 export const INTENT_LABEL: Record<string, string> = {
   maintenance_request: "Maintenance", lease_question: "Lease question", balance_question: "Balance", payment_question: "Payment", fee_waiver_request: "Fee waiver",
   legal_threat: "Legal threat", eviction_concern: "Eviction", deposit_dispute: "Deposit dispute", other_resident_data: "Other resident's data", general_other: "Other",
