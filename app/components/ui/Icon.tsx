@@ -22,13 +22,19 @@ const P: Record<string, string[]> = {
   inbox: ["M22 12h-6l-2 3h-4l-2-3H2", "M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"],
   lock: ["M7 11V7a5 5 0 0 1 10 0v4", "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2"],
   gauge: ["m12 14 4-4", "M3.34 19a10 10 0 1 1 17.32 0"],
+  help: ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20", "M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3", "M12 17h.01"],
   layers: ["m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z", "m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65", "m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"],
 };
 
+/** Icons are drawn as a CSS mask (a data-URI SVG used as the mask of a currentColor box), not as inline <svg>: browser extensions such as
+ *  Dark Reader add attributes to every svg and every svg child (<path>), and React cannot suppress hydration warnings on all of them.
+ *  A <span> has one element to protect, and it carries suppressHydrationWarning. */
 export function Icon({ name, className, size = 16 }: { name: keyof typeof P | string; className?: string; size?: number }) {
+  const body = (P[name] ?? []).map((d) => `<path d="${d}"/>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+  const url = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
   return (
-    <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={cx("shrink-0", className)}>
-      {(P[name] ?? []).map((d, i) => <path key={i} d={d} />)}
-    </svg>
+    <span suppressHydrationWarning aria-hidden="true" data-icon={name} className={cx("inline-block shrink-0 bg-current align-middle", className)}
+      style={{ width: size, height: size, WebkitMaskImage: url, maskImage: url, WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskSize: "100% 100%", maskSize: "100% 100%" }} />
   );
 }

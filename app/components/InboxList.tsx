@@ -1,86 +1,67 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { InboxRow as Row } from "../lib/types";
 import { INTENT_LABEL } from "../lib/format";
 import InboxRow from "./InboxRow";
-import { Card } from "./ui/Card";
 import { EmptyState } from "./ui/EmptyState";
 import { Icon } from "./ui/Icon";
+import { Kbd } from "./ui/Kbd";
 import { Skeleton } from "./ui/Skeleton";
-import { cx } from "./ui/cx";
 
-type Filter = "all" | "needs_review" | "escalate_only" | "unprocessed";
-const FILTERS: { id: Filter; label: string; test: (m: Row) => boolean }[] = [
-  { id: "all", label: "All", test: () => true },
-  { id: "needs_review", label: "Needs review", test: (m) => m.run?.route === "needs_review" },
-  { id: "escalate_only", label: "Escalate", test: (m) => m.run?.route === "escalate_only" },
-  { id: "unprocessed", label: "Unprocessed", test: (m) => !m.run?.route },
-];
+export interface InboxHandle { focusSearch: () => void; move: (dir: 1 | -1) => void }
+const GROUPS = [
+  { id: "needs", label: "Needs you", test: (m: Row) => m.run?.route === "needs_review" || m.run?.route === "escalate_only" },
+  { id: "ready", label: "Ready", test: (m: Row) => m.run?.route === "draft_ready" },
+  { id: "none", label: "Unprocessed", test: (m: Row) => !m.run?.route },
+] as const;
 
-/** Sticky header with search and filter chips (client-side only), then grouped sections. Up/Down move between rows, Enter opens. */
-export default function InboxList({ rows, loaded, sel, seen, onSelect }: { rows: Row[]; loaded: boolean; sel: string | null; seen: Set<string>; onSelect: (r: Row) => void }) {
-  const [filter, setFilter] = useState<Filter>("all");
+/** Search, then three groups with counts. Roving tabindex; Arrow keys and j/k move, Enter opens, `/` focuses search (handled by Workbench). */
+const InboxList = forwardRef<InboxHandle, { rows: Row[]; loaded: boolean; sel: string | null; seen: Set<string>; onSelect: (r: Row) => void }>(function InboxList({ rows, loaded, sel, seen, onSelect }, ref) {
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
-  // Counts are computed over the search results, so a chip's number always matches what its filter would show.
-  const searched = useMemo(() => {
+  const search = useRef<HTMLInputElement>(null);
+  const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return needle ? rows.filter((m) => `${m.resident_name} ${m.unit} ${m.text} ${m.run?.intent ? INTENT_LABEL[m.run.intent] : ""}`.toLowerCase().includes(needle)) : rows;
   }, [rows, q]);
-  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.id, searched.filter(f.test).length])) as Record<Filter, number>, [searched]);
-  const visible = useMemo(() => searched.filter(FILTERS.find((f) => f.id === filter)!.test), [searched, filter]);
-  const pinned = visible.filter((m) => m.scenario_label), rest = visible.filter((m) => !m.scenario_label);
+  const groups = GROUPS.map((g) => ({ ...g, rows: visible.filter(g.test) })).filter((g) => g.rows.length);
+  const order = groups.flatMap((g) => g.rows);
+  // Exactly one row is in the tab order: the selected one, else the first.
+  const tabbableId = order.find((m) => m.message_id === sel)?.message_id ?? order[0]?.message_id;
 
-  // Arrow keys and j/k move between rows; Enter opens the focused row (it is a button). j/k are ignored while typing.
   const move = (dir: 1 | -1) => {
     const items = [...(box.current?.querySelectorAll<HTMLElement>("[data-inbox-row]") ?? [])];
-    if (items.length === 0) return;
+    if (!items.length) return;
     const i = items.indexOf(document.activeElement as HTMLElement);
-    (i < 0 ? items[dir === 1 ? 0 : items.length - 1] : items[Math.min(Math.max(i + dir, 0), items.length - 1)])?.focus();
+    const cur = i >= 0 ? i : Math.max(0, items.findIndex((e) => e.dataset.id === sel));
+    const next = items[i < 0 && sel === null ? (dir === 1 ? 0 : items.length - 1) : Math.min(Math.max(cur + dir, 0), items.length - 1)];
+    next?.focus();
   };
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); move(1); } else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
-  };
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (e.metaKey || e.ctrlKey || e.altKey || !t || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
-      if (e.key === "j") move(1); else if (e.key === "k") move(-1);
-    };
-    document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
-  });
+  useImperativeHandle(ref, () => ({ focusSearch: () => search.current?.focus(), move }));
 
   return (
-    <div ref={box} onKeyDown={onKey} className="space-y-4">
-      <div className="sticky top-0 z-10 -mx-1 space-y-2 bg-bg/95 px-1 pb-2 pt-1 backdrop-blur">
+    <div ref={box} onKeyDown={(e) => { if (e.target instanceof HTMLInputElement) return; if (e.key === "ArrowDown") { e.preventDefault(); move(1); } else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); } }} className="flex min-h-0 flex-1 flex-col">
+      <div className="border-b border-border px-3 py-2">
+        <label htmlFor="inbox-search" className="sr-only">Search messages</label>
         <div className="relative">
-          <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-          <label htmlFor="inbox-search" className="sr-only">Search messages</label>
-          <input id="inbox-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, unit or message" aria-keyshortcuts="j k" className="min-h-11 w-full rounded-lg border border-border-strong bg-surface pl-9 pr-3 text-base placeholder:text-faint sm:min-h-10" />
-        </div>
-        <div role="group" aria-label="Filter messages" className="flex flex-wrap gap-1.5 pb-1">
-          {FILTERS.map((f) => (
-            <button key={f.id} type="button" onClick={() => setFilter(f.id)} aria-pressed={filter === f.id}
-              className={cx("t flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm font-medium sm:min-h-8", filter === f.id ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface text-muted hover:bg-bg-subtle hover:text-text")}>
-              {f.label}<span className="num text-xs">{loaded ? counts[f.id] : "–"}</span>
-            </button>
-          ))}
+          <Icon name="search" size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+          <input ref={search} id="inbox-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, unit or message" aria-keyshortcuts="/" className="min-h-11 w-full rounded-md border border-border-strong bg-surface pl-8 pr-8 text-base placeholder:text-faint md:min-h-8" />
+          <Kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 max-md:hidden">/</Kbd>
         </div>
       </div>
-
-      {!loaded && <div role="status" aria-label="Loading messages" className="space-y-2">{[0, 1, 2, 3].map((i) => <Card key={i} className="flex gap-3 p-3"><Skeleton className="size-9 rounded-full" /><div className="flex-1 space-y-2"><Skeleton className="w-1/2" /><Skeleton className="w-full" /></div></Card>)}</div>}
-      {loaded && rows.length === 0 && <EmptyState icon="inbox" title="The inbox is empty">Run <code>npm run migrate && npm run seed</code> to load the synthetic residents and messages.</EmptyState>}
-      {loaded && rows.length > 0 && visible.length === 0 && <EmptyState icon="search" title="No messages match" action={<button type="button" className="min-h-11 rounded-lg px-3 text-base font-medium text-accent hover:underline" onClick={() => { setFilter("all"); setQ(""); }}>Clear filters</button>}>Try another filter or search term.</EmptyState>}
-      {pinned.length > 0 && <Group title="Demo scenarios" hint="Five one-click walkthroughs"><Rows rows={pinned} sel={sel} seen={seen} onSelect={onSelect} /></Group>}
-      {rest.length > 0 && <Group title="Inbox" hint={`${rest.length} message${rest.length === 1 ? "" : "s"}`}><Rows rows={rest} sel={sel} seen={seen} onSelect={onSelect} /></Group>}
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="inbox-scroll">
+        {!loaded && <div role="status" aria-label="Loading messages">{[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} aria-hidden className="grid grid-cols-[14px_1fr] gap-x-2.5 border-b border-border px-3 py-2.5"><Skeleton className="mt-1 size-2.5 rounded-full" /><div className="space-y-2"><div className="flex gap-2"><Skeleton className="h-3.5 w-1/3" /><Skeleton className="ml-auto h-3.5 w-6" /></div><Skeleton className="h-3 w-5/6" /></div></div>))}</div>}
+        {loaded && rows.length === 0 && <EmptyState title="The inbox is empty">Run <code>npm run migrate && npm run seed</code> to load the synthetic residents and messages.</EmptyState>}
+        {loaded && rows.length > 0 && order.length === 0 && <EmptyState title="No messages match" action={<button type="button" className="min-h-11 text-base font-medium text-accent underline underline-offset-4 md:min-h-7" onClick={() => setQ("")}>Clear search</button>}>Try another search term.</EmptyState>}
+        {groups.map((g) => (
+          <section key={g.id} aria-label={g.label}>
+            <h2 className="label-caps sticky top-0 z-10 flex items-center justify-between border-b border-border bg-bg px-3 py-1.5">{g.label}<span className="tnum font-normal">{g.rows.length}</span></h2>
+            {g.rows.map((m) => <InboxRow key={m.message_id} m={m} selected={sel === m.message_id} unread={!seen.has(m.message_id)} tabbable={m.message_id === tabbableId} onSelect={onSelect} />)}
+          </section>
+        ))}
+      </div>
     </div>
   );
-}
-
-function Group({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
-  return <section aria-label={title}><div className="mb-2 flex items-baseline justify-between px-1"><h2 className="text-lg">{title}</h2><span className="text-sm text-muted">{hint}</span></div>{children}</section>;
-}
-function Rows({ rows, sel, seen, onSelect }: { rows: Row[]; sel: string | null; seen: Set<string>; onSelect: (r: Row) => void }) {
-  return <Card as="div" className="overflow-hidden"><ul className="divide-y divide-border">{rows.map((m) => <li key={m.message_id}><InboxRow m={m} selected={sel === m.message_id} unread={!seen.has(m.message_id)} onSelect={onSelect} /></li>)}</ul></Card>;
-}
+});
+export default InboxList;

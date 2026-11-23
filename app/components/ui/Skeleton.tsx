@@ -1,2 +1,3 @@
 import { cx } from "./cx";
-export const Skeleton = ({ className }: { className?: string }) => <div aria-hidden="true" className={cx("skeleton h-3", className)} />;
+/** Flat placeholder block; pass a height and width to match the content it stands in for. */
+export const Skeleton = ({ className, style }: { className?: string; style?: React.CSSProperties }) => <div aria-hidden="true" style={style} className={cx("skeleton h-3", className)} />;
