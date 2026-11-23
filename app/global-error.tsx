@@ -11,6 +11,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           <h1 style={{ fontSize: 22, margin: "0 0 8px" }}>Tenant Message Copilot</h1>
           <p role="alert" style={{ fontSize: 16, lineHeight: 1.5 }}>Something went wrong. Nothing was sent to anyone. Reference <code>{ref}</code>.</p>
           <button type="button" onClick={reset} style={{ marginTop: 12, minHeight: 44, padding: "0 20px", fontSize: 16, borderRadius: 8, border: "1px solid #1a1a1a", background: "#1a1a1a", color: "#fff", cursor: "pointer" }}>Try again</button>
+          <button type="button" onClick={() => { try { void navigator.clipboard.writeText(`reference: ${ref}`); } catch { /* clipboard blocked */ } }} style={{ marginTop: 12, marginLeft: 8, minHeight: 44, padding: "0 20px", fontSize: 16, borderRadius: 8, border: "1px solid #1a1a1a", background: "#fff", color: "#1a1a1a", cursor: "pointer" }}>Copy details</button>
         </main>
       </body>
     </html>
