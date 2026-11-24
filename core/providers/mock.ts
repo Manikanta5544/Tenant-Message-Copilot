@@ -150,7 +150,7 @@ function composeDraft(input: DraftInput, o: MockOptions, attempt: number): { lan
         seg.push({ type: "text", text: L.payrec! });
         pick.forEach((p, i) => { if (i) seg.push({ type: "text", text: L.andthen! }); seg.push({ type: "fact", id: p.id }); });
       }
-      if (claim) seg.push({ type: "text", text: ". " }, { type: "fact", id: claim.id });
+      if (claim) seg.push({ type: "text", text: pick.length ? ". " : "" }, { type: "fact", id: claim.id });
       if (pick.some((p) => p.state === "pending")) seg.push({ type: "text", text: L.pending! });
       seg.push({ type: "text", text: L.end! });
       break;

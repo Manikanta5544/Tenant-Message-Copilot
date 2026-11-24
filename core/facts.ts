@@ -108,12 +108,16 @@ export function formatDate(iso: IsoDate, lang: Language): string {
 }
 const ordinalEn = (n: number) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]!); };
 
-const T: Record<Language, { pending: string; settled: string; failed: string; duplicate: string; reversed: string; none: string; ref: string; days: string; due: (n: number) => string; matched: string }> = {
-  English: { pending: "pending", settled: "settled", failed: "failed", duplicate: "duplicate entry", reversed: "reversed", none: "no matching payment found in our records", ref: "ref", days: "days", due: ordinalEn, matched: "payment found" },
-  Hinglish: { pending: "pending", settled: "settled", failed: "failed", duplicate: "duplicate entry", reversed: "reversed", none: "hamare records mein koi matching payment nahi mila", ref: "ref", days: "din", due: (n) => `${n} tareekh`, matched: "payment mila" },
-  Hindi: { pending: "लंबित", settled: "सफल", failed: "विफल", duplicate: "डुप्लिकेट प्रविष्टि", reversed: "वापस किया गया", none: "हमारे रिकॉर्ड में कोई मेल खाता भुगतान नहीं मिला", ref: "संदर्भ", days: "दिन", due: (n) => `${n} तारीख`, matched: "भुगतान मिला" },
-  Telugu: { pending: "పెండింగ్", settled: "పూర్తయింది", failed: "విఫలమైంది", duplicate: "డూప్లికేట్ ఎంట్రీ", reversed: "రివర్స్ చేయబడింది", none: "మా రికార్డులలో సరిపోలే చెల్లింపు కనబడలేదు", ref: "ref", days: "రోజులు", due: (n) => `${n}వ తేదీ`, matched: "చెల్లింపు కనబడింది" },
+const T: Record<Language, { pending: string; settled: string; failed: string; duplicate: string; reversed: string; none: string; ref: string; days: string; due: (n: number) => string; adj: Record<"pending" | "settled" | "failed", string>; found: (adj: string, ref: string) => string }> = {
+  English: { pending: "pending", settled: "settled", failed: "failed", duplicate: "duplicate entry", reversed: "reversed", none: "We could not find a payment matching what you described.", ref: "ref", days: "days", due: ordinalEn, adj: { pending: "pending", settled: "settled", failed: "failed" }, found: (a, r) => `We also see a ${a} payment with reference ${r}.` },
+  Hinglish: { pending: "pending", settled: "settled", failed: "failed", duplicate: "duplicate entry", reversed: "reversed", none: "Aapne jis payment ka zikr kiya, woh hamein nahi mila.", ref: "ref", days: "din", due: (n) => `${n} tareekh`, adj: { pending: "pending", settled: "settled", failed: "failed" }, found: (a, r) => `Hamein reference ${r} ka ek ${a} payment bhi dikh raha hai.` },
+  Hindi: { pending: "लंबित", settled: "सफल", failed: "विफल", duplicate: "डुप्लिकेट प्रविष्टि", reversed: "वापस किया गया", none: "आपने जिस भुगतान का उल्लेख किया, वह हमें नहीं मिला।", ref: "संदर्भ", days: "दिन", due: (n) => `${n} तारीख`, adj: { pending: "लंबित", settled: "सफल", failed: "विफल" }, found: (a, r) => `हमें संदर्भ ${r} वाला एक ${a} भुगतान भी दिख रहा है।` },
+  Telugu: { pending: "పెండింగ్", settled: "పూర్తయింది", failed: "విఫలమైంది", duplicate: "డూప్లికేట్ ఎంట్రీ", reversed: "రివర్స్ చేయబడింది", none: "మీరు చెప్పిన చెల్లింపు మాకు కనబడలేదు.", ref: "ref", days: "రోజులు", due: (n) => `${n}వ తేదీ`, adj: { pending: "పెండింగ్‌లో ఉన్న", settled: "పూర్తయిన", failed: "విఫలమైన" }, found: (a, r) => `${r} రిఫరెన్స్‌తో ${a} చెల్లింపు కూడా మాకు కనిపిస్తోంది.` },
 };
+
+/** Version of the rendered fact wording (the sentence templates above). Bump it when any template changes: stored baselines record the
+ *  version that produced them, and `npm run doctor` flags older ones (refresh with `npm run seed -- --refresh`). */
+export const TEMPLATE_VERSION = "t2";
 
 export function renderFact(f: Fact, lang: Language): string {
   const t = T[lang];
@@ -128,7 +132,7 @@ export function renderFact(f: Fact, lang: Language): string {
       if (f.term === "due_day") return t.due(f.value);
       return `${f.value} ${t.days}`;
     case "claim_match":
-      return f.matched ? `${t.matched}: ${t.ref} ${f.matched_reference} (${t[f.matched_state!]})` : t.none;
+      return f.matched ? t.found(t.adj[f.matched_state as "pending" | "settled" | "failed"], f.matched_reference!) : t.none;
     case "clause": return f.clause.text;
   }
 }
@@ -142,11 +146,20 @@ export interface RenderedSegment {
   cite?: string;
 }
 
+/** A quote or a claim-check sentence already ends with its own punctuation, so a model's leading ". " after it is dropped. */
+function tidyAfter(prev: Draft["segments"][number] | undefined, text: string, bundle: EvidenceBundle): string {
+  if (!prev || prev.type === "text") return text;
+  if (prev.type === "quote") return text.replace(/^[\s.,;:!?।]+/u, "");
+  if (factById(bundle, prev.id)?.kind !== "claim_match") return text;
+  const rest = text.replace(/^[\s.,;:!?।]+/u, "");
+  return rest ? " " + rest : "";
+}
+
 export function renderDraft(draft: Draft, bundle: EvidenceBundle, lang: Language = draft.language): RenderedSegment[] {
   return draft.segments.map((s, i): RenderedSegment => {
     // A quoted clause already ends with its own punctuation and sits on its own line: a model's ". Next sentence" after it
     // would show a stray leading mark, so punctuation (and surrounding space) at the start of the following text is dropped.
-    if (s.type === "text") return { type: "text", text: draft.segments[i - 1]?.type === "quote" ? s.text.replace(/^[\s.,;:!?।]+/u, "") : s.text };
+    if (s.type === "text") return { type: "text", text: tidyAfter(draft.segments[i - 1], s.text, bundle) };
     const f = factById(bundle, s.id);
     if (!f) throw new Error(`unknown reference ${s.id}`);
     if (s.type === "quote") {

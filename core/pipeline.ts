@@ -3,7 +3,7 @@
 // reads the clock (callers pass asOf and a `now` for latency), the environment or the database.
 import { REASON } from "./reasons";
 import {
-  FactIds, buildLeaseTermFacts, kindsIn, renderDraft, renderPlain, type Draft, type RenderedSegment,
+  FactIds, TEMPLATE_VERSION, buildLeaseTermFacts, kindsIn, renderDraft, renderPlain, type Draft, type RenderedSegment,
 } from "./facts";
 import {
   AdjudicationSchema, ClassificationSchema, PROMPT_VERSION, ProviderError, SemanticResultSchema, worstCaseCostMicroUsd, DEFAULT_PRICES,
@@ -94,7 +94,7 @@ export async function runPipeline(deps: PipelineDeps, input: PipelineInput): Pro
   const floors: FloorHit[] = keywordFloors(input.message, input.ownUnit);
   const hazard = floors.some((f) => f.code === "urgent_hazard");
   const emptyBundle: EvidenceBundle = { residentId: input.residentId, leaseId: null, asOf: input.asOf, facts: [] };
-  await emit({ stage: "pipeline_started", outcome: "ok", payload: { prompt_version: PROMPT_VERSION, provider: provider.label, floors: floors.map((f) => f.code) } });
+  await emit({ stage: "pipeline_started", outcome: "ok", payload: { prompt_version: PROMPT_VERSION, template_version: TEMPLATE_VERSION, provider: provider.label, floors: floors.map((f) => f.code) } });
 
   // A template run: no model draft, no claims. Used for escalation topics, holding replies and failures.
   const finish = (a: {
