@@ -14,7 +14,15 @@ const pairs = [
   ["text-faint", "bg", 4.5], ["text-faint", "surface", 4.5], ["text-faint", "bg-subtle", 4.5],
   ["accent", "surface", 4.5], ["accent", "bg", 4.5], ["accent", "bg-subtle", 4.5], ["accent", "accent-soft", 4.5], ["accent-fg", "accent", 4.5], ["accent-fg", "accent-hover", 4.5], ["text", "accent-soft", 4.5],
   ["border-strong", "surface", 3], ["border-strong", "bg", 3], ["accent", "surface", 3],
-  ...["ready", "review", "escalate", "fact"].flatMap((k) => [[`${k}-fg`, `${k}-bg`, 4.5], [`${k}-fg`, "surface", 4.5], [`${k}-fg`, "bg", 4.5], [`${k}-fg`, "bg-subtle", 4.5]]),
+  ["accent", "surface-raised", 4.5], ["text-muted", "surface-raised", 4.5], ["text-faint", "surface-raised", 4.5], ["text-muted", "accent-soft", 4.5], ["text-faint", "accent-soft", 4.5],
+  // Status colours appear as small dots and labels on every neutral surface, and as text on their own tint (notices).
+  ...["ready", "review", "escalate"].flatMap((k) => [[`${k}-fg`, `${k}-bg`, 4.5], [`${k}-fg`, "surface", 4.5], [`${k}-fg`, "surface-raised", 4.5], [`${k}-fg`, "bg", 4.5], [`${k}-fg`, "bg-subtle", 4.5], [`${k}-fg`, "accent-soft", 4.5]]),
+  // Status dots are graphical objects: 3:1 against the surfaces they sit on.
+  ...["ready", "review", "escalate"].flatMap((k) => [[`${k}-fg`, "surface", 3], [`${k}-fg`, "bg-subtle", 3]]),
+  // The "not processed" dot is a hollow ring in text-faint: graphical object, 3:1 on every surface a row can have (rest, hover, selected).
+  ...["bg", "surface", "surface-raised", "bg-subtle", "accent-soft"].map((b) => ["text-faint", b, 3]),
+  // The hairline between panes is decorative (not required); the strong border (inputs, focus targets) must be 3:1.
+  ["border-strong", "bg-subtle", 3], ["border-strong", "surface-raised", 3],
 ];
 let bad = 0; const rows = [];
 for (const [theme, t] of [["light", light], ["dark", dark]]) for (const [fg, bg, min] of pairs) {
