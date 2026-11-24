@@ -120,7 +120,8 @@ describe.skipIf(!HAS_DB)("row level security is forced for table owners too", ()
     await c.connect();
     const r = await c.query(`SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' AND relname <> 'schema_migrations'`);
     await c.end();
-    expect(r.rows.length).toBe(11);
+    expect(r.rows.length).toBe(12); // the 11 original tables plus review_actions (0007)
+    expect(r.rows.map((x: { relname: string }) => x.relname)).toContain("review_actions");
     for (const row of r.rows) expect([row.relname, row.relrowsecurity, row.relforcerowsecurity]).toEqual([row.relname, true, true]);
   });
 });

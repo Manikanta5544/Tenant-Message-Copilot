@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { renderPlain } from "../core/facts";
+import { TEMPLATE_VERSION, renderPlain } from "../core/facts";
 import { MockProvider, type MockOptions } from "../core/providers/mock";
 import { closeAllPools } from "../db/client";
 import { runMessage } from "../evals/harness";
@@ -17,6 +17,8 @@ describe.skipIf(!HAS_DB)("pipeline with the mock provider (tests the application
     const r = await run("102", "The kitchen tap has been dripping since Monday.");
     expect(r.output.route).toBe("draft_ready");
     expect(r.output.intent).toBe("maintenance_request");
+    // Every run records the wording version, so `npm run doctor` can flag stored baselines made by older text.
+    expect(r.events.find((e) => e.stage === "pipeline_started")?.payload).toMatchObject({ template_version: TEMPLATE_VERSION });
     expect(r.output.rendered.find((s) => s.type === "quote")?.cite).toContain("Clause 4, version 1");
     expect(text(r)).toContain("acknowledge a maintenance request within 24 hours");
     expect(r.output.verification.map((l) => l.ok)).toEqual([true, true, true, true, true, true]);
@@ -93,7 +95,7 @@ describe.skipIf(!HAS_DB)("pipeline with the mock provider (tests the application
     const r = await run("101", "I transferred ₹20,000 yesterday. Please confirm you received the full amount.");
     expect(r.output.route).toBe("needs_review");
     expect(r.output.flags).toContain("claim_unmatched");
-    expect(text(r)).toContain("no matching payment found in our records");
+    expect(text(r)).toContain("We could not find a payment matching what you described.");
     expect(r.output.rendered.some((x) => x.kind === "claim_match")).toBe(true);
   });
 
