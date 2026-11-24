@@ -16,9 +16,10 @@ await seed(url);
 console.log("seeded");
 if (!process.argv.includes("--no-baselines")) {
   const { createProvider } = await import("../app/server/provider");
-  const { seedBaselines } = await import("./baselines");
+  const { seedBaselines, reportBaselines } = await import("./baselines");
   const { closeAllPools } = await import("./client");
   const r = await seedBaselines(createProvider(), (m) => console.log(m));
   await closeAllPools();
-  console.log(`baselines: ${r.created} created`);
+  const code = reportBaselines(r);
+  if (code) process.exit(code);
 }

@@ -167,15 +167,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const url = getEnv().DATABASE_URL_OWNER;
   if (!url) { console.error("DATABASE_URL_OWNER is not set."); process.exit(1); }
   // Seed the data (owner connection), then create the baseline runs through the app role with the configured provider (D3).
+  // `--refresh` regenerates baselines made by an older prompt or wording version (needs the live provider unless PROVIDER_MODE=mock).
   // `--no-baselines` skips the second step (no model call). In production the provider is live: the baselines are real model output.
   seed(url).then(async () => {
     console.log("seeded");
     if (process.argv.includes("--no-baselines")) return;
     const { createProvider } = await import("../app/server/provider");
-    const { seedBaselines } = await import("./baselines");
+    const { seedBaselines, reportBaselines } = await import("./baselines");
     const { closeAllPools } = await import("./client");
-    const r = await seedBaselines(createProvider(), (m) => console.log(m));
+    const r = await seedBaselines(createProvider(), (m) => console.log(m), { refresh: process.argv.includes("--refresh") });
     await closeAllPools();
-    console.log(`baselines: ${r.created} created, ${r.kept} already present`);
+    const code = reportBaselines(r);
+    if (code) process.exit(code);
   }).catch((e) => { console.error(e.message); process.exit(1); });
 }

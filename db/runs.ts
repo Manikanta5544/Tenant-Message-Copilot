@@ -10,7 +10,7 @@ import { runPipeline, type PipelineOutput, type TraceEvent } from "@/core/pipeli
 import type { LLMProvider } from "@/core/provider";
 import type { Language } from "@/core/types";
 import { dbBudget, reserveRunSlot } from "./budget";
-import { appUrl, getPool, withScope } from "./client";
+import { appUrl, connectClient, withScope } from "./client";
 import { DEMO_ORG_ID } from "./ids";
 import { makeScopedStore } from "./store";
 
@@ -178,8 +178,7 @@ async function executeRun(c: { runId: string; msg: { id: string; text: string; r
     stages[e.stage] = Math.round((stages[e.stage] ?? 0) + (e.latency_ms ?? 0)); tin += e.tokens_in ?? 0; tout += e.tokens_out ?? 0; cost += e.cost_micro_usd ?? 0;
     // One statement and one round trip: the scope is set in a CTE that the INSERT reads from, so row security sees it.
     // Saved before it is emitted anywhere else.
-    const pool = await getPool(url);
-    const client = await pool.connect();
+    const client = await connectClient(url);
     let broken = false;
     try {
       await client.query(
