@@ -1,5 +1,8 @@
 # Neon setup (exact steps)
 
+**Using Neon as your local database (Windows, no Docker):** follow "Quick start (Windows, no Docker)" in the README. In short: the **direct** URL (no `-pooler`) is `DATABASE_URL_OWNER`; the **pooled** URL (`-pooler`) with user `copilot_app` is `DATABASE_URL_APP`; `npm run migrate` creates `copilot_app` using `APP_ROLE_PASSWORD`, which must equal the password in `DATABASE_URL_APP`. If `npm run doctor` says the app-role login failed, that mismatch (or a pooled/direct mix-up) is the cause. Use a separate Neon branch for development so the tests never touch production data.
+
+
 1. **Create the project.** In the Neon console create a project (Postgres 16 or newer). Note the default branch (`main`) and database name.
 2. **Get two connection strings** (Connection Details):
    - **Direct** (unpooled, host without `-pooler`): this is `DATABASE_URL_OWNER`. Used by `npm run migrate` and `npm run seed` only.

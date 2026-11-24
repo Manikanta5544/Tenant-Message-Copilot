@@ -1,3 +1,5 @@
+> Historical log. Test counts in this file were true when written; the current numbers are in CHANGELOG.md.
+
 # Progress
 
 ## Phase 1: Foundation (done locally)
