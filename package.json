@@ -4,20 +4,30 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/check-node.mjs && tsx --env-file-if-exists=.env scripts/doctor-quick.ts",
     "dev": "next dev",
+    "prebuild": "node scripts/check-node.mjs && node scripts/check-fonts.mjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "migrate": "tsx --env-file-if-exists=.env db/migrate.ts",
-    "seed": "tsx --env-file-if-exists=.env db/seed.ts",
-    "eval": "tsx --env-file-if-exists=.env evals/run.ts --mode live",
+    "migrate": "node scripts/check-node.mjs && tsx --env-file-if-exists=.env db/migrate.ts",
+    "seed": "node scripts/check-node.mjs && tsx --env-file-if-exists=.env db/seed.ts",
+    "eval": "node scripts/check-node.mjs && tsx --env-file-if-exists=.env evals/run.ts --mode live",
     "eval:replay": "tsx --env-file-if-exists=.env evals/run.ts --mode replay",
     "eval:mock": "tsx --env-file-if-exists=.env evals/run.ts --mode mock",
     "test:watch": "vitest",
-    "db:reset": "tsx --env-file-if-exists=.env db/reset.ts",
-    "models": "tsx --env-file-if-exists=.env scripts/models.ts",
-    "contrast": "node scripts/contrast.mjs"
+    "db:reset": "node scripts/check-node.mjs && tsx --env-file-if-exists=.env db/reset.ts",
+    "models": "node scripts/check-node.mjs && tsx --env-file-if-exists=.env scripts/models.ts",
+    "contrast": "node scripts/contrast.mjs",
+    "check:css": "node scripts/check-css.mjs",
+    "lint": "node scripts/lint.mjs",
+    "scan:bundle": "node scripts/scan-bundle.mjs .next/static",
+    "doctor": "node scripts/check-node.mjs && tsx --env-file-if-exists=.env scripts/doctor.ts",
+    "verify:neon": "tsx --env-file-if-exists=.env scripts/verify-neon.ts",
+    "e2e": "node e2e/run.mjs",
+    "e2e:layout": "node e2e/layout.mjs",
+    "e2e:darkreader": "node e2e/darkreader.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.10.0",
@@ -43,5 +53,8 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.1"
+  },
+  "engines": {
+    "node": ">=22.12 <25"
   }
 }
