@@ -1,5 +1,6 @@
 name: ci
 on: { pull_request: {}, push: { branches: [main] } }
+permissions: { contents: read }
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -10,27 +11,70 @@ jobs:
         ports: ["5432:5432"]
         options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      TEST_DATABASE_URL_OWNER: postgres://postgres:postgres@localhost:5432/copilot_test
-      TEST_DATABASE_URL_APP: postgres://copilot_app:app@localhost:5432/copilot_test
-      DATABASE_URL_OWNER: postgres://postgres:postgres@localhost:5432/copilot_test
-      DATABASE_URL_APP: postgres://copilot_app:app@localhost:5432/copilot_test
+      TEST_DATABASE_URL_OWNER: postgres://postgres:postgres@127.0.0.1:5432/copilot_test
+      TEST_DATABASE_URL_APP: postgres://copilot_app:app@127.0.0.1:5432/copilot_test
+      DATABASE_URL_OWNER: postgres://postgres:postgres@127.0.0.1:5432/copilot_test
+      DATABASE_URL_APP: postgres://copilot_app:app@127.0.0.1:5432/copilot_test
+      APP_ROLE_PASSWORD: app
       DEMO_AS_OF_DATE: "2026-11-19"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
+        with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=low   # production dependencies must be clean
       - run: npm run typecheck
-      - run: npm test                 # unit + database + isolation tests; no model calls
-      - run: npm run eval:mock        # critical-20 through the real pipeline on the labelled mock; fails on any S0
+      - run: npm run lint
+      - run: npm run contrast                          # WCAG AA token check, light and dark
+      - run: npm test                                  # unit + database + isolation + review/visitor tests; no model calls
+      - run: npm run eval:mock                         # critical-20 through the real pipeline on the labelled mock; fails on any S0
       - name: Replay recorded real model responses (only when recordings are committed)
         run: |
           if [ -s evals/fixtures/recorded.json ]; then npm run eval:replay; else echo "no recordings committed: replay skipped (unverified)"; fi
+      - name: Build with canary secrets, then scan the client bundle for them
+        env:
+          LLM_API_KEY: gsk_ci_canary_0123456789abcdefghij
+          VISITOR_SALT: ci-canary-salt-0123456789abcdef0123456789
+        run: npm run build && npm run check:css && npm run scan:bundle
+      - name: End-to-end (Playwright): production headers, nonce CSP, zero violations, no horizontal scroll
+        env: { PROVIDER_MODE: replay, VISITOR_SALT: "ci-visitor-salt-0123456789abcdef0123456789" }
+        run: |
+          npx playwright install --with-deps chromium
+          npm run migrate && npm run seed -- --no-baselines
+          npm start -- -p 3000 & npx wait-on http://localhost:3000/api/health
+          BASE_URL=http://localhost:3000 E2E_PRODUCTION=1 E2E_FLOWS=0 NODE_PATH=$(npm root -g):$PWD/node_modules npm run e2e
+  windows-layout:
+    # The class of bug that showed the mobile layout at 1920 px on a developer's Windows machine: build on Windows, assert the emitted CSS
+    # has the responsive rules (check:css), then render at 360/768/1024/1280/1920 and assert the layout. No database is needed: the shell renders
+    # without one and the API answers 503, which this job tolerates.
+    runs-on: windows-latest
+    env:
+      PROVIDER_MODE: replay
+      VISITOR_SALT: ci-visitor-salt-0123456789abcdef0123456789
+      DATABASE_URL_APP: postgres://copilot_app:app@127.0.0.1:5432/copilot
+      DATABASE_URL_OWNER: postgres://postgres:postgres@127.0.0.1:5432/copilot
+      APP_ROLE_PASSWORD: app
+      DEMO_AS_OF_DATE: "2026-11-19"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
       - run: npm run build
+      - run: npm run check:css
+      - name: Render the layout matrix in Chromium
+        shell: pwsh
+        run: |
+          npm install --no-save playwright
+          npx playwright install chromium
+          Start-Process -FilePath npm.cmd -ArgumentList "start","--","-p","3000" -NoNewWindow
+          npx wait-on http://localhost:3000/api/health
+          $env:BASE_URL = "http://localhost:3000"
+          node e2e/layout.mjs
   live-eval:
-    # Spends free-tier quota: only on main or by hand. Needs the LLM_API_KEY repository secret.
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: verify
+    # Manual only: spends model quota. Needs the LLM_API_KEY repository secret. Refuses an invalid run (npm run eval exits non-zero
+    # when the validity rule fails, a model ID is unavailable, or the gate fails), and uploads the recording for review.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -39,8 +83,8 @@ jobs:
         ports: ["5432:5432"]
         options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL_OWNER: postgres://postgres:postgres@localhost:5432/copilot
-      DATABASE_URL_APP: postgres://copilot_app:app@localhost:5432/copilot
+      DATABASE_URL_OWNER: postgres://postgres:postgres@127.0.0.1:5432/copilot
+      DATABASE_URL_APP: postgres://copilot_app:app@127.0.0.1:5432/copilot
       APP_ROLE_PASSWORD: app
       PROVIDER_MODE: live
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
@@ -49,8 +93,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
+        with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci
-      - run: npm run migrate && npm run seed
-      - run: npm run models           # fail fast if a configured model ID is not available to this key
-      - run: npm run eval             # gate: any S0 fails; S1 may not rise against the last saved live run
+      - run: npm run migrate && npm run seed -- --no-baselines
+      - run: npm run doctor                            # env, DB roles, migrations, model IDs, billed one-token round trips
+      - run: npm run eval                              # gate: any S0 fails; an invalid run (fallbacks, wrong models) is refused
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: live-eval-recording, path: evals/fixtures/recorded.json }
