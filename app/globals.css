@@ -24,6 +24,8 @@
   --accent: #0f5c63;
   --accent-hover: #0a4a50;
   --accent-soft: #e1eded;
+  /* Selected inbox row: a soft teal wash in light; in dark a neutral raise plus the 2 px accent bar (a saturated teal fill was too heavy). */
+  --row-selected: var(--accent-soft);
   --accent-fg: #ffffff;
 
   --ready-fg: #1b6b3a; --ready-bg: #e6f1e9; --ready-border: #9cc7aa;
@@ -38,7 +40,7 @@
     --bg: #121110; --bg-subtle: #1a1917; --surface: #171614; --surface-raised: #201f1c;
     --border: #2c2a26; --border-strong: #7d786e;
     --text: #ece9e3; --text-muted: #bdb8ae; --text-faint: #a09b91;
-    --accent: #6cc4c4; --accent-hover: #8ad6d6; --accent-soft: #16302f; --accent-fg: #0c1514;
+    --accent: #6cc4c4; --accent-hover: #8ad6d6; --accent-soft: #16302f; --accent-fg: #0c1514; --row-selected: var(--bg-subtle);
     --ready-fg: #7fd39f; --ready-bg: #14291c; --ready-border: #2f6a47;
     --review-fg: #f0b865; --review-bg: #2f2410; --review-border: #7a5a20;
     --escalate-fg: #ff9d94; --escalate-bg: #351613; --escalate-border: #84342e;
@@ -50,7 +52,7 @@
   --bg: #121110; --bg-subtle: #1a1917; --surface: #171614; --surface-raised: #201f1c;
   --border: #2c2a26; --border-strong: #7d786e;
   --text: #ece9e3; --text-muted: #bdb8ae; --text-faint: #a09b91;
-  --accent: #6cc4c4; --accent-hover: #8ad6d6; --accent-soft: #16302f; --accent-fg: #0c1514;
+  --accent: #6cc4c4; --accent-hover: #8ad6d6; --accent-soft: #16302f; --accent-fg: #0c1514; --row-selected: var(--bg-subtle);
   --ready-fg: #7fd39f; --ready-bg: #14291c; --ready-border: #2f6a47;
   --review-fg: #f0b865; --review-bg: #2f2410; --review-border: #7a5a20;
   --escalate-fg: #ff9d94; --escalate-bg: #351613; --escalate-border: #84342e;
@@ -71,6 +73,7 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
+  --color-row-selected: var(--row-selected);
   --color-accent-fg: var(--accent-fg);
   --color-ready: var(--ready-fg); --color-ready-bg: var(--ready-bg); --color-ready-line: var(--ready-border);
   --color-review: var(--review-fg); --color-review-bg: var(--review-bg); --color-review-line: var(--review-border);
@@ -83,6 +86,9 @@
 
 /* Type scale 11 / 13 / 14 / 16 / 20 / 28. 14 px body, 13 px dense. */
 @theme {
+  /* Pixel breakpoints, not rem: an enlarged browser font size must not move the layout. dock = evidence rail docks, wide = two-column draft. */
+  --breakpoint-sm: 640px; --breakpoint-md: 768px; --breakpoint-lg: 1024px; --breakpoint-xl: 1280px; --breakpoint-2xl: 1536px;
+  --breakpoint-dock: 1360px; --breakpoint-wide: 1700px;
   --text-xs: 0.6875rem; --text-xs--line-height: 1.45;
   --text-sm: 0.8125rem; --text-sm--line-height: 1.5;
   --text-base: 0.875rem; --text-base--line-height: 1.55;
@@ -95,6 +101,71 @@
 }
 
 html { background: var(--bg); }
+/* ===== Layout skeleton: plain CSS, classic media queries, no utility variants =====
+   The shell (rail or top bar, list, detail, evidence dock) lives here on purpose: it keeps working when the generated utility CSS is stale,
+   partial or rewritten by an extension. Breakpoints are in px. Utilities are used for content inside the panes. */
+html, body { overflow-x: clip; }
+.shell { display: flex; flex-direction: column; height: 100dvh; min-width: 0; }
+.shell-main { display: flex; flex-direction: column; flex: 1 1 0%; min-width: 0; min-height: 0; }
+.shell-scroll { flex: 1 1 0%; min-height: 0; overflow-y: auto; overflow-x: clip; }
+.rail { display: flex; flex: none; align-items: center; gap: 4px; min-height: 48px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.rail-list { display: flex; flex: 1 1 0%; align-items: center; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.rail-list, .nav-icon { display: none; }
+.rail-foot { display: none; }
+.nav-title { flex: 1 1 0%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.nav-active { position: relative; color: var(--accent); }
+.nav-active::before { content: ""; position: absolute; background: var(--accent); left: 0; right: 0; bottom: -1px; height: 2px; }
+.panes { display: flex; height: 100%; min-height: 0; min-width: 0; }
+.pane-list { display: flex; flex-direction: column; flex: none; width: 100%; min-height: 0; min-width: 0; border-color: var(--border); }
+.pane-detail { flex: 1 1 0%; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: clip; }
+.detail-grid { display: block; min-width: 0; }
+.detail-main { min-width: 0; }
+.evidence-dock { display: none; }
+.original-panel { display: none; }
+.draft-grid { display: block; }
+@media (max-width: 767.98px) {
+  .panes[data-pane="list"] > .pane-detail { display: none; }
+  .panes[data-pane="detail"] > .pane-list { display: none; }
+}
+@media (min-width: 768px) {
+  .shell { flex-direction: row; }
+  .rail { width: 56px; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 0; border-right: 1px solid var(--border); }
+  .rail-list { display: flex; flex: 0 0 auto; flex-direction: column; }
+  .nav-icon { display: grid; }
+  .rail-foot { display: grid; margin-top: auto; }
+  .nav-title, .nav-menu { display: none !important; }
+  .nav-active::before { left: -6px; right: auto; top: 8px; bottom: 8px; width: 2px; height: auto; }
+  .pane-list { width: 300px; border-right: 1px solid var(--border); }
+}
+@media (min-width: 1024px) { .pane-list { width: 320px; } }
+@media (min-width: 1360px) {
+  .pane-list { width: 380px; }
+  .detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 356px; gap: 32px; }
+  .evidence-dock { display: block; align-self: start; position: sticky; top: 16px; max-height: calc(100dvh - 80px); overflow-y: auto; }
+  .evidence-button { display: none; }
+}
+@media (min-width: 1700px) {
+  .shell { max-width: 1600px; margin-inline: auto; border-inline: 1px solid var(--border); }
+  .draft-grid { display: grid; grid-template-columns: minmax(0, 62ch) minmax(15rem, 1fr); gap: 32px; }
+  .original-panel { display: block; align-self: start; }
+  .msg-body { display: none; }
+}
+
+/* ===== Scrollbars: thin, no arrow buttons, everywhere =====
+   Chromium 121+ ignores ::-webkit-scrollbar on any element that also sets scrollbar-width or scrollbar-color, and falls back to the
+   platform bar (arrow buttons on Windows). So the standard properties go only to browsers without the pseudo-elements (Firefox). */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+.tabs-scroll { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tabs-scroll::-webkit-scrollbar { display: none; }
+/* Long ids, references and URLs wrap instead of widening the page. */
+.wrap-anywhere { overflow-wrap: anywhere; }
+
 body { background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
 /* Money, dates and ids line up in columns. */
@@ -126,10 +197,13 @@ button:disabled { cursor: not-allowed; }
 .tbl tr[data-line]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Motion: 120 ms ease-out, answers a user action, and disabled for people who ask for less. */
-.t { transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out, opacity 120ms ease-out; }
+.t { transition: opacity 120ms ease-out; } /* only opacity and transform are ever animated: no layout or paint work per frame */
+/* Off-screen inbox rows skip layout and paint. 88 px is the median measured row height; `auto` then remembers each row's own height. */
+[data-inbox-row] { content-visibility: auto; contain-intrinsic-size: auto 88px; }
 .pop { animation: pop 120ms ease-out; }
 @keyframes pop { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
 .sheet-in { animation: sheet 120ms ease-out; }
+.palette-in { animation: pop 120ms ease-out; }
 @keyframes sheet { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
 /* Skeletons are flat, shaped like the content they stand in for; a slow pulse, no shimmer gradient. */
 .skeleton { background: var(--bg-subtle); border-radius: 4px; animation: pulse 1.6s ease-in-out infinite; }
@@ -137,9 +211,6 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
-
-/* Thin scrollbars that follow the theme. */
-* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 
 /* ---------- Tables: hairlines, no boxes, tabular figures ---------- */
 .tbl { width: 100%; border-collapse: collapse; font-size: 0.8125rem; font-variant-numeric: tabular-nums; }

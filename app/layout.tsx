@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Source_Serif_4 } from "next/font/google";
+import localFont from "next/font/local";
 import StatusFooter from "./components/StatusFooter";
-import TailwindGuard from "./components/TailwindGuard";
+import StyleProbe from "./components/StyleProbe";
 import LayoutProbe from "./components/LayoutProbe";
+import PaletteLoader from "./components/PaletteLoader";
 import { Rail } from "./components/ui/Rail";
 import { cookies } from "next/headers";
 import { bootStatus } from "@/core/env";
@@ -13,9 +14,11 @@ import { rawEnv } from "@/core/env";
 // The CSP nonce is per request, so every page renders dynamically.
 export const dynamic = "force-dynamic";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const serif = Source_Serif_4({ subsets: ["latin"], variable: "--font-source-serif", display: "swap" });
-const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
+// Self-hosted variable fonts (npm packages): the build needs no network, and the CSP stays font-src 'self'.
+// next/font needs literal paths, so they are written out in full.
+const inter = localFont({ src: "../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2", weight: "100 900", variable: "--font-inter", display: "swap" });
+const serif = localFont({ src: "../node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2", weight: "200 900", variable: "--font-source-serif", display: "swap" });
+const mono = localFont({ src: "../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2", weight: "100 800", variable: "--font-jetbrains", display: "swap" });
 
 /** Absolute base for Open Graph URLs: the Vercel production domain when deployed, otherwise localhost. */
 function siteUrl(): string {
@@ -48,13 +51,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body suppressHydrationWarning>
         <LayoutProbe />
-        {isDev() && <TailwindGuard />}
+        <PaletteLoader />
+        {isDev() && <StyleProbe />}
         {boot.ok ? (
-          <div className="flex h-dvh flex-col md:flex-row min-[1700px]:mx-auto min-[1700px]:max-w-[1600px] min-[1700px]:border-x min-[1700px]:border-border">
+          <div className="shell">
             <a href="#main" className="sr-only rounded-md bg-accent px-4 py-2 text-accent-fg focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60]">Skip to content</a>
             <Rail />
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div id="scroll" className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+            <div className="shell-main">
+              <div id="scroll" className="shell-scroll">{children}</div>
               <StatusFooter />
             </div>
           </div>

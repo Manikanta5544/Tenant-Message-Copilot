@@ -1,6 +1,7 @@
 // The explicit state machine: reserve budget -> triage -> evidence tools -> draft -> verify (six
 // layers) -> route. Pure orchestration: storage, budget and trace sinks are injected, nothing here
 // reads the clock (callers pass asOf and a `now` for latency), the environment or the database.
+import { memoStore } from "./prefetch";
 import { REASON } from "./reasons";
 import {
   FactIds, TEMPLATE_VERSION, buildLeaseTermFacts, kindsIn, renderDraft, renderPlain, type Draft, type RenderedSegment,
@@ -40,6 +41,8 @@ export interface BudgetPort {
 export interface PipelineDeps {
   provider: LLMProvider;
   store: EvidenceStore;
+  /** Warm the evidence reads while triage runs (default true). Output is identical either way; false exists so a test can prove it. */
+  prefetch?: boolean;
   budget: BudgetPort;
   emit(e: TraceEvent): Promise<void>;
   /** Monotonic milliseconds, for latency only. */
@@ -86,7 +89,9 @@ function usageOf(r: { usage?: Partial<Usage> } | undefined) {
 }
 
 export async function runPipeline(deps: PipelineDeps, input: PipelineInput): Promise<PipelineOutput> {
-  const { provider, store, emit } = deps;
+  const { provider, emit } = deps;
+  const memo = deps.prefetch === false ? null : memoStore(deps.store);
+  const store: EvidenceStore = memo ?? deps.store;
   const prices = deps.prices ?? DEFAULT_PRICES;
   const totals = { tokens_in: 0, tokens_out: 0, cost_micro_usd: 0 };
   const addUsage = (u: { tin: number; tout: number; cost: number }) => { totals.tokens_in += u.tin; totals.tokens_out += u.tout; totals.cost_micro_usd += u.cost; };
@@ -134,6 +139,7 @@ export async function runPipeline(deps: PipelineDeps, input: PipelineInput): Pro
     // ---- 3. triage ----
     let cls: Classification | null = null;
     const t0 = deps.now();
+    if (memo) void memo.warm(input.asOf).catch(() => {}); // evidence reads run beside the triage call
     try {
       const r: ProviderResult<unknown> = await provider.classify({ message: input.message, asOf: input.asOf, preferredLanguage: input.preferredLanguage });
       addUsage(usageOf(r));
@@ -296,7 +302,10 @@ export async function runPipeline(deps: PipelineDeps, input: PipelineInput): Pro
       }
       const failed = layers.find((l) => !l.ok);
       await emit({ stage: "draft", model: raw.usage.model, tokens_in: raw.usage.tokens_in, tokens_out: raw.usage.tokens_out, cost_micro_usd: raw.usage.cost_micro_usd, latency_ms: raw.usage.latency_ms,
-        outcome: failed ? `rejected:${failed.name}` : "accepted", payload: { attempt, layers: layers.map((l) => ({ layer: l.layer, name: l.name, ok: l.ok, issues: l.issues })) } });
+        outcome: failed ? `rejected:${failed.name}` : "accepted", payload: { attempt, layers: layers.map((l) => ({ layer: l.layer, name: l.name, ok: l.ok, issues: l.issues })),
+          // For diagnosing a rejected first draft: which evidence ids the draft used and which of them the check named. Ids only, never text.
+          referenced_ids: l1.draft ? l1.draft.segments.flatMap((x) => (x.type === "text" ? [] : [x.id])) : [],
+          failing_ids: failed ? [...new Set(failed.issues.map((x) => /^([A-Z]\d+) /.exec(x)?.[1]).filter((x): x is string => !!x))] : [] } });
       verification = layers;
       if (accepted) draft = accepted;
       else if (critical || failed?.effect === "block") { break; }

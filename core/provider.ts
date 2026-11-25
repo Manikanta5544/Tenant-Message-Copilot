@@ -49,7 +49,7 @@ export const adjudicationPrompt = (i: AdjudicationInput) =>
 export interface Usage { model: string; tokens_in: number; tokens_out: number; cost_micro_usd: number; latency_ms: number }
 export interface ProviderResult<T> { value: T; usage: Usage }
 
-export type ProviderErrorKind = "timeout" | "rate_limit" | "malformed" | "unavailable";
+export type ProviderErrorKind = "timeout" | "rate_limit" | "malformed" | "unavailable" | "busy";
 export class ProviderError extends Error {
   constructor(public kind: ProviderErrorKind, message: string, public usage?: Partial<Usage>) { super(message); this.name = "ProviderError"; }
 }
@@ -71,7 +71,7 @@ export interface LLMProvider {
 export type { Draft, Route };
 
 // ---------- prompt versions and cost model ----------
-export const PROMPT_VERSION = "v2";
+export const PROMPT_VERSION = "v3";
 export const MODELS = { triage: "claude-haiku-5-5", draft: "claude-sonnet-5-5", check: "claude-haiku-5-5" } as const;
 
 /** Micro-USD per million tokens. ASSUMED list prices (not fetched); override with PRICE_TABLE_JSON. See docs/DECISIONS.md. */

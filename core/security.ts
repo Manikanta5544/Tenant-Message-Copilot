@@ -20,13 +20,13 @@ export function buildCsp(nonce: string, dev = false): string {
 }
 
 /** Headers that do not depend on the request. */
-export function staticSecurityHeaders(prod: boolean): Record<string, string> {
+export function staticSecurityHeaders(prod: boolean, hstsPreload = false): Record<string, string> {
   return {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), serial=(), usb=(), xr-spatial-tracking=()",
     "X-Frame-Options": "DENY",
-    ...(prod ? { "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload" } : {}),
+    ...(prod ? { "Strict-Transport-Security": `max-age=63072000; includeSubDomains${hstsPreload ? "; preload" : ""}` } : {}),
   };
 }
 

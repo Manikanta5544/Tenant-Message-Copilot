@@ -21,6 +21,10 @@ const schema = z.object({
   NODE_ENV: z.preprocess(blank, z.enum(["development", "test", "production"]).default("development")),
   VERCEL: str(),
   TRUST_PROXY: flag,
+  /** Trusted proxies in front of the app; the client address is the Nth entry from the right of x-forwarded-for. */
+  TRUSTED_PROXY_HOPS: int(1, 1, 10),
+  /** Adds `preload` to Strict-Transport-Security. Off by default: preload is hard to undo and covers every subdomain. */
+  HSTS_PRELOAD: flag,
 
   PROVIDER_MODE: z.preprocess(blank, z.enum(["live", "replay", "mock"]).optional()),
   LLM_PROVIDER: z.preprocess(blank, z.enum(["openai_compat", "anthropic"]).default("openai_compat")),
@@ -34,6 +38,14 @@ const schema = z.object({
   LLM_MODEL_CHECK: str(),
   LLM_REASONING_EFFORT: z.preprocess(blank, z.enum(["low", "medium", "high"]).optional()),
   LLM_OUTPUT_HEADROOM: int(0, 0, 32_000),
+  /** Reasoning effort for the short triage and semantic-check calls only; the draft keeps LLM_REASONING_EFFORT. */
+  LLM_REASONING_EFFORT_FAST: z.preprocess(blank, z.enum(["low", "medium", "high"]).optional()),
+  /** Model calls in flight per server instance, and how long a call may wait for a slot before the honest "busy" fallback. */
+  LLM_MAX_CONCURRENCY: int(4, 1, 64),
+  LLM_QUEUE_WAIT_MS: int(8000, 0, 60_000),
+  /** Live-stream (SSE) connection caps: per client IP, and per server instance. Beyond them the stream answers 429 and the browser polls instead. */
+  SSE_MAX_PER_IP: int(4, 1, 50),
+  SSE_MAX_GLOBAL: int(200, 1, 5000),
   LLM_JSON_MODE: z.preprocess(blank, z.enum(["true", "false"]).default("true")),
   LLM_PRICES_JSON: str(),
 
