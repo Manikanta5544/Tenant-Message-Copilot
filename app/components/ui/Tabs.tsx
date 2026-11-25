@@ -8,7 +8,7 @@ export function Tabs<T extends string>({ tabs, value, onChange, label, idPrefix 
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const move = (i: number) => { const t = tabs[(i + tabs.length) % tabs.length]!; onChange(t.id); refs.current[t.id]?.focus(); };
   return (
-    <div role="tablist" aria-label={label} className="flex gap-4 overflow-x-auto border-b border-border">
+    <div role="tablist" aria-label={label} className="tabs-scroll flex gap-4 border-b border-border">
       {tabs.map((t, i) => (
         <button key={t.id} ref={(el) => { refs.current[t.id] = el; }} role="tab" id={`${idPrefix}-tab-${t.id}`} aria-controls={`${idPrefix}-panel-${t.id}`} aria-selected={value === t.id} tabIndex={value === t.id ? 0 : -1}
           onClick={() => onChange(t.id)}

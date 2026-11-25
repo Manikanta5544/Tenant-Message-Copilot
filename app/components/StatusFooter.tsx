@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useStatus } from "../lib/useStatus";
 import ThemeToggle from "./ThemeToggle";
 import { Dot, type Status } from "./ui/Dot";
@@ -59,11 +60,12 @@ export default function StatusFooter() {
                 <dt>Runs today</dt><dd className="tnum text-text">{s.budget.runs_used ?? "?"} of {s.budget.runs_cap}</dd>
               </dl>
             ) : <p className="mt-3">{err ? "Status could not be loaded." : "Checking…"}</p>}
+            <p className="mt-3"><Link href="/system" onClick={() => setOpen(false)} className="t text-accent underline underline-offset-2 hover:text-text">System status</Link></p>
             {problems.length > 0 && <ul role="status" className="mt-3 space-y-1 border-l-2 border-review-line pl-3 text-text">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
           </div>
         )}
       </div>
-      {s && <span className="tnum ml-auto hidden shrink-0 sm:inline" title="Leases, balances and due dates are computed as of this fixed date.">Demo date {s.as_of}</span>}
+      <span className="tnum ml-auto hidden min-w-[11.5rem] shrink-0 text-right sm:inline" title="Leases, balances and due dates are computed as of this fixed date.">{s ? `Demo date ${s.as_of}` : ""}</span>
       <span className="ml-auto sm:ml-0"><ThemeToggle /></span>
     </footer>
   );

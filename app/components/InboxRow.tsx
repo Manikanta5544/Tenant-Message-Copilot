@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { INTENT_LABEL, agoShort } from "../lib/format";
 import type { InboxRow as Row } from "../lib/types";
 import { Dot, STATUS_WORD, statusOf } from "./ui/Dot";
@@ -6,12 +7,12 @@ import { cx } from "./ui/cx";
 
 /** One dense row: status dot, name and unit, relative time, one-line preview, at most one secondary tag (intent).
  *  Language is shown only when it is not English. Unread is bold. Roving tabindex: only the active row is in the tab order. */
-export default function InboxRow({ m, selected, unread, tabbable, onSelect }: { m: Row; selected: boolean; unread: boolean; tabbable: boolean; onSelect: (r: Row) => void }) {
+function InboxRow({ m, selected, unread, tabbable, onSelect }: { m: Row; selected: boolean; unread: boolean; tabbable: boolean; onSelect: (r: Row) => void }) {
   const lang = m.run?.language ?? m.preferred_language;
   const tag = m.run?.intent ? INTENT_LABEL[m.run.intent] : null;
   return (
     <button type="button" data-inbox-row data-id={m.message_id} tabIndex={tabbable ? 0 : -1} onClick={() => onSelect(m)} aria-current={selected ? "true" : undefined}
-      className={cx("t group relative grid min-h-11 w-full grid-cols-[14px_1fr] gap-x-2.5 border-b border-border px-3 py-2.5 text-left hover:bg-bg-subtle focus-visible:bg-bg-subtle", selected && "bg-accent-soft hover:bg-accent-soft")}>
+      className={cx("t group relative grid min-h-11 w-full grid-cols-[14px_1fr] gap-x-2.5 border-b border-border px-3 py-2.5 text-left hover:bg-bg-subtle focus-visible:bg-bg-subtle", selected && "bg-row-selected hover:bg-row-selected")}>
       {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-accent" />}
       <span className="pt-[5px]"><Dot status={statusOf(m.run?.route)} /></span>
       <span className="min-w-0">
@@ -33,3 +34,6 @@ export default function InboxRow({ m, selected, unread, tabbable, onSelect }: { 
     </button>
   );
 }
+
+/** Memoised: selecting a row or typing in search re-renders the list, but only the rows whose own props changed. */
+export default memo(InboxRow);

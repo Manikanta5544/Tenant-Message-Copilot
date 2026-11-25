@@ -13,6 +13,7 @@ export default function ThemeToggle() {
     const attr = document.documentElement.getAttribute("data-theme");
     setTheme(attr === "dark" || attr === "light" ? attr : systemDark() ? "dark" : "light");
   }, []);
+  useEffect(() => { const f = () => { const a = document.documentElement.getAttribute("data-theme"); setTheme(a === "dark" ? "dark" : a === "light" ? "light" : systemDark() ? "dark" : "light"); }; window.addEventListener("tmc:theme", f); return () => window.removeEventListener("tmc:theme", f); }, []);
   const flip = () => {
     const next: Theme = theme === "dark" ? "light" : "dark";
     setTheme(next);

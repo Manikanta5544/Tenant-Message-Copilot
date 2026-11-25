@@ -34,23 +34,25 @@ export default function Overview({ rows, facts, onSelect }: { rows: InboxRow[]; 
         <div><dt className="flex items-center gap-1.5 text-muted"><Dot status="ready" />Ready</dt><dd className="tnum mt-0.5 text-xl font-medium">{n.ready}</dd></div>
         <div><dt className="flex items-center gap-1.5 text-muted"><Dot status="none" />Unprocessed</dt><dd className="tnum mt-0.5 text-xl font-medium">{n.none}</dd></div>
       </dl>
-      <p className="mt-3 text-base">
+      <p className="mt-3 min-h-12 text-base" data-reserve>
         <span className="text-muted">Last eval gate </span>
         {ev ? <Link href="/evals" className="font-medium text-accent underline underline-offset-4">{ev.gate_ok ? "Pass" : "Fail"} {ev.passed}/{ev.total}</Link> : <Link href="/evals" className="text-accent underline underline-offset-4">no run yet</Link>}
         {ev && <span className="text-muted"> ({ev.mode}, prompt {ev.prompt_version}, {day(ev.at)})</span>}
       </p>
-      {facts && <p className="mt-1 text-base"><span className="text-muted">Model </span>{facts.model.name} <span className="text-muted">({MODE_WORD[facts.model.mode]})</span></p>}
+      <p className="mt-1 min-h-6 text-base">{facts && <><span className="text-muted">Model </span>{facts.model.name} <span className="text-muted">({MODE_WORD[facts.model.mode]})</span></>}</p>
       <p className="mt-1 text-sm text-muted">Every reply is a draft for a property manager. Nothing is ever sent to a tenant. All residents, leases and payments are synthetic.</p>
 
       <h3 className="mt-7 text-base">Start with Scenario 2 (payment mismatch)</h3>
       <p className="mt-1 text-base text-muted">It shows the whole path: the claim is checked against the ledger, the draft quotes only verified values, and the route asks for review.</p>
       <ol className="mt-3 space-y-1 text-base">
-        {SCENARIOS.map((s, i) => rows.some((r) => r.scenario_label === s.label) && (
+        {SCENARIOS.map((s, i) => (rows.length === 0 || rows.some((r) => r.scenario_label === s.label)) && (
           <li key={s.label} className="flex gap-2">
             <span className="tnum w-4 shrink-0 text-right text-muted">{i + 1}.</span>
-            <button type="button" onClick={() => open(s.label)} className="t -my-0.5 min-h-8 rounded px-1 text-left hover:bg-bg-subtle focus-visible:bg-bg-subtle">
-              <span className="text-accent underline decoration-accent/40 underline-offset-2">{s.line}</span>
-            </button>
+            {rows.length === 0 ? <span className="min-h-8 px-1 text-muted">{s.line}</span> : (
+              <button type="button" onClick={() => open(s.label)} className="t -my-0.5 min-h-8 rounded px-1 text-left hover:bg-bg-subtle focus-visible:bg-bg-subtle">
+                <span className="text-accent underline decoration-accent/40 underline-offset-2">{s.line}</span>
+              </button>
+            )}
           </li>
         ))}
       </ol>

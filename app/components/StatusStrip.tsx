@@ -21,13 +21,13 @@ export default function StatusStrip({ run, onVerification }: { run: RunView; onV
   const status = statusOf(run.route);
   const d = decisionSentences({ route: run.route as Route | null, reasons: run.route_reasons, intent: run.intent, flags: run.flags });
   return (
-    <section aria-label="Decision" className="flex flex-col gap-y-0.5 border-y border-border py-2 min-[1500px]:min-h-10 min-[1500px]:flex-row min-[1500px]:items-baseline min-[1500px]:gap-x-3">
-      <div className="flex items-baseline gap-x-3 min-[1500px]:contents">
+    <section aria-label="Decision" className="flex flex-col gap-y-0.5 border-y border-border py-2 2xl:min-h-10 2xl:flex-row 2xl:items-baseline 2xl:gap-x-3">
+      <div className="flex items-baseline gap-x-3 2xl:contents">
         <span className="self-center"><Dot status={status} /></span>
         <h2 className="shrink-0 text-base">{STATUS_WORD[status]}</h2>
         <p className="min-w-0 flex-1 text-base text-muted">{d.why}</p>
       </div>
-      <p className="flex flex-wrap items-baseline gap-x-4 pl-[22px] text-base min-[1500px]:pl-0">
+      <p className="flex flex-wrap items-baseline gap-x-4 pl-[22px] text-base 2xl:pl-0">
         <span className="font-medium text-text">{NEXT[run.route ?? "needs_review"]}</span>
         {sum && onVerification && <button type="button" onClick={onVerification} className="t rounded text-sm text-accent underline underline-offset-4 hover:text-accent-hover" data-testid="verification-summary">{sum.text}</button>}
       </p>

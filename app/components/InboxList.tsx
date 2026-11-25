@@ -1,5 +1,5 @@
 "use client";
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState, useDeferredValue } from "react";
 import type { InboxRow as Row } from "../lib/types";
 import { INTENT_LABEL } from "../lib/format";
 import InboxRow from "./InboxRow";
@@ -18,12 +18,14 @@ const GROUPS = [
 /** Search, then three groups with counts. Roving tabindex; Arrow keys and j/k move, Enter opens, `/` focuses search (handled by Workbench). */
 const InboxList = forwardRef<InboxHandle, { rows: Row[]; loaded: boolean; sel: string | null; seen: Set<string>; onSelect: (r: Row) => void }>(function InboxList({ rows, loaded, sel, seen, onSelect }, ref) {
   const [q, setQ] = useState("");
+  // The input stays instant; filtering and regrouping the list can lag a frame behind a fast typist.
+  const dq = useDeferredValue(q);
   const box = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const visible = useMemo(() => {
-    const needle = q.trim().toLowerCase();
+    const needle = dq.trim().toLowerCase();
     return needle ? rows.filter((m) => `${m.resident_name} ${m.unit} ${m.text} ${m.run?.intent ? INTENT_LABEL[m.run.intent] : ""}`.toLowerCase().includes(needle)) : rows;
-  }, [rows, q]);
+  }, [rows, dq]);
   const groups = GROUPS.map((g) => ({ ...g, rows: visible.filter(g.test) })).filter((g) => g.rows.length);
   const order = groups.flatMap((g) => g.rows);
   // Exactly one row is in the tab order: the selected one, else the first.

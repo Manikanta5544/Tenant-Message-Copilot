@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { Fact } from "@/core/types";
 import { KIND_LABEL, evidenceTitle, type Link } from "../lib/evidence";
 import Evidence from "./Evidence";
@@ -8,7 +8,7 @@ import { cx } from "./ui/cx";
 
 /** The proof, numbered to match the footnotes in the draft. Hovering or focusing a row highlights its footnote in the draft, and the reverse.
  *  Used docked (right column) and inside the bottom sheet. */
-export default function EvidenceRail({ facts, num, open, onToggle, link, onHot, onLine, flash }: {
+function EvidenceRail({ facts, num, open, onToggle, link, onHot, onLine, flash }: {
   facts: Fact[]; num: Record<string, number>; open: Set<string>; onToggle: (id: string) => void; link: Link; onHot: (id: string | null) => void; onLine: (id: string | null) => void; flash: { id: string; n: number } | null;
 }) {
   const refs = useRef<Record<string, HTMLElement | null>>({});
@@ -39,3 +39,6 @@ export default function EvidenceRail({ facts, num, open, onToggle, link, onHot, 
     </ol>
   );
 }
+
+/** Memoised: the rail is rendered twice (dock and sheet) and re-renders only when its own facts, open set or highlight change. */
+export default memo(EvidenceRail);

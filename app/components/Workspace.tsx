@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { plainText } from "../lib/format";
+import { changeSentence, diffWords } from "../lib/diff";
+import DiffText from "./DiffText";
 import { linkState } from "../lib/evidence";
 import type { Fact } from "@/core/types";
 import type { InboxRow, LayerView, ReviewRow, RunView, Seg, TraceRow } from "../lib/types";
@@ -14,7 +16,8 @@ import OriginalPanel from "./OriginalPanel";
 import ReviewHistory from "./ReviewHistory";
 import RunStatus from "./RunStatus";
 import StatusStrip, { EscalationStatement, Notices } from "./StatusStrip";
-import TraceTable from "./TraceTable";
+import dynamic from "next/dynamic";
+const TraceTable = dynamic(() => import("./TraceTable"), { loading: () => <p className="mt-4 text-muted" role="status">Loading trace…</p> });
 import VerificationList from "./VerificationList";
 import { Button } from "./ui/Button";
 import { Sheet } from "./ui/Sheet";
@@ -27,21 +30,22 @@ const MODE_WORD: Record<string, string> = { live: "Live model", replay: "Replaye
 const DOCKED = "(min-width: 1360px)";
 
 /** Detail pane. Data fetching lives in Workbench; this presents a RunState: the message, the status strip, then the draft beside its proof. */
-export default function Workspace({ row, thread = [], state, onGenerate, onBack, onReview }: { row: InboxRow; thread?: InboxRow[]; state: RunState; onGenerate: () => void; onBack: () => void; onReview: ReviewFn }) {
+export default function Workspace({ row, thread = [], state, previousText, onGenerate, onBack, onReview }: { row: InboxRow; previousText?: string; thread?: InboxRow[]; state: RunState; onGenerate: () => void; onBack: () => void; onReview: ReviewFn }) {
   return (
     <div className="px-4 pb-10 pt-4 md:px-6">
       <MessageBlock row={row} onBack={onBack} />
       <div className="mt-3">
         {state.status !== "ready" ? <RunStatus state={state} onGenerate={onGenerate} /> : (
-          <Ready key={state.run.id} row={row} thread={thread} run={state.run} trace={state.trace} reviews={state.reviews} onGenerate={onGenerate} onReview={(a) => onReview(state.run.id, a)} />
+          <Ready key={state.run.id} previousText={previousText} row={row} thread={thread} run={state.run} trace={state.trace} reviews={state.reviews} onGenerate={onGenerate} onReview={(a) => onReview(state.run.id, a)} />
         )}
       </div>
     </div>
   );
 }
 
-function Ready({ row, thread, run, trace, reviews, onGenerate, onReview }: { row: InboxRow; thread: InboxRow[]; run: RunView; trace: TraceRow[]; reviews: ReviewRow[]; onGenerate: () => void; onReview: (a: { action: "approved" | "edited"; edited_text?: string }) => ReturnType<ReviewFn> }) {
+function Ready({ row, thread, run, trace, reviews, previousText, onGenerate, onReview }: { previousText?: string; row: InboxRow; thread: InboxRow[]; run: RunView; trace: TraceRow[]; reviews: ReviewRow[]; onGenerate: () => void; onReview: (a: { action: "approved" | "edited"; edited_text?: string }) => ReturnType<ReviewFn> }) {
   const [tab, setTab] = useState<Tab>("draft");
+  const [compare, setCompare] = useState(false);
   const facts = useMemo(() => (run.facts ?? []) as Fact[], [run]);
   const segs = useMemo(() => (run.segments ?? []) as Seg[], [run]);
   const { list, num } = useMemo(() => footnotes(segs, facts), [segs, facts]);
@@ -68,10 +72,16 @@ function Ready({ row, thread, run, trace, reviews, onGenerate, onReview }: { row
   const link = useMemo(() => linkState(facts, hot, lineHot), [facts, hot, lineHot]);
   const railProps = { facts: list, num, open, onToggle: toggle, link, onHot: setHot, onLine: setLineHot, flash };
   const hasRail = !escalate && tab === "draft";
+  // When the first draft was rejected by a check and the second was used, say so quietly and link to the trace row that shows why.
+  const secondAttempt = (() => {
+    const d = trace.filter((t) => t.stage === "draft");
+    const first = d.find((t) => Number((t.payload as { attempt?: number } | null)?.attempt) === 1), second = d.find((t) => Number((t.payload as { attempt?: number } | null)?.attempt) === 2);
+    return first && second && first.outcome.startsWith("rejected:") ? { seq: first.seq, reason: first.outcome.slice(9) } : null;
+  })();
 
   return (
-    <div className="min-[1360px]:grid min-[1360px]:grid-cols-[minmax(0,1fr)_356px] min-[1360px]:gap-8">
-      <div className="min-w-0">
+    <div className="detail-grid">
+      <div className="detail-main">
         <StatusStrip run={run} onVerification={openVerification} />
         <p className="mt-2 text-sm text-muted" data-testid="meta-line">{meta.join(" · ")}</p>
         <Notices run={run} onGenerate={onGenerate} />
@@ -83,8 +93,21 @@ function Ready({ row, thread, run, trace, reviews, onGenerate, onReview }: { row
             <>
               {escalate ? <EscalationStatement run={run} /> : (
                 <>
-                  {hasRail && <div className="mt-3 min-[1360px]:hidden"><Button small onClick={() => setSheet(true)} aria-haspopup="dialog">Evidence <span className="tnum text-muted">({list.length})</span></Button></div>}
-                  <div className="min-[1700px]:grid min-[1700px]:grid-cols-[minmax(0,62ch)_minmax(15rem,1fr)] min-[1700px]:gap-8">
+                  {secondAttempt && (
+                    <p className="mt-3 text-sm text-muted" data-testid="second-attempt">
+                      <button type="button" className="t underline decoration-border-strong underline-offset-2 hover:text-text" onClick={() => { setTab("trace"); setTimeout(() => { const el = document.getElementById(`trace-${secondAttempt.seq}`); el?.scrollIntoView({ block: "center" }); }, 50); }}>
+                        Second attempt (first rejected: {secondAttempt.reason})
+                      </button>
+                    </p>
+                  )}
+                  {previousText !== undefined && (
+                    <div className="mt-3 max-w-[62ch]">
+                      <Button variant="link" onClick={() => setCompare((v) => !v)} aria-expanded={compare}>{compare ? "Hide comparison" : "Compare with previous"}</Button>
+                      {compare && <div className="mt-2"><p className="mb-1 text-sm text-muted">Previous draft against this one: {changeSentence(previousText, plainText(segs))}.</p><DiffText ops={diffWords(previousText, plainText(segs))} label="Previous draft compared with this draft" /></div>}
+                    </div>
+                  )}
+                  {hasRail && <div className="evidence-button mt-3"><Button small onClick={() => setSheet(true)} aria-haspopup="dialog">Evidence <span className="tnum text-muted">({list.length})</span></Button></div>}
+                  <div className="draft-grid">
                     <DraftLetter run={run} segs={segs} facts={facts} num={num} reviews={reviews} hot={link.ids} onHot={setHot} onOpen={show} onGenerate={onGenerate} onReview={onReview} />
                     <div className="mt-5"><OriginalPanel row={row} thread={thread} /></div>
                   </div>
@@ -99,7 +122,7 @@ function Ready({ row, thread, run, trace, reviews, onGenerate, onReview }: { row
         </div>
       </div>
       {hasRail && (
-        <aside aria-label="Evidence" className="hidden self-start min-[1360px]:sticky min-[1360px]:top-4 min-[1360px]:block min-[1360px]:max-h-[calc(100dvh-5rem)] min-[1360px]:overflow-y-auto">
+        <aside aria-label="Evidence" className="evidence-dock">
           <h2 className="label-caps mb-1.5">Evidence <span className="tnum font-normal">{list.length}</span></h2>
           <EvidenceRail {...railProps} />
         </aside>

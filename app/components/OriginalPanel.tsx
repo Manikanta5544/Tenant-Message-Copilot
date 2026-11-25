@@ -9,7 +9,7 @@ const when = (iso: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric",
  *  so the reply can be read against what was asked. Below 1700 px the message sits above the strip as before. */
 export default function OriginalPanel({ row, thread }: { row: InboxRow; thread: InboxRow[] }) {
   return (
-    <aside aria-label="Original message and thread" className="hidden min-[1700px]:block min-[1700px]:self-start">
+    <aside aria-label="Original message and thread" className="original-panel">
       <h2 className="label-caps mb-1.5">Original message</h2>
       <blockquote lang={LANG[row.preferred_language] ?? "en"} className="border-l-2 border-border-strong pl-3 text-base">{row.text}</blockquote>
       <p className="tnum mt-1 text-sm text-muted">{row.resident_name}, unit {row.unit}, {when(row.created_at)}</p>

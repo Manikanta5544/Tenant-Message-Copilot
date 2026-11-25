@@ -16,8 +16,8 @@ export default function MessageBlock({ row, onBack }: { row: InboxRow; onBack: (
     <header>
       <Button variant="ghost" small className="-ml-2 mb-1 md:hidden" onClick={onBack}><Icon name="back" size={14} />Inbox</Button>
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base"><span className="text-lg font-semibold">{row.resident_name}</span><span className="tnum text-muted">Unit {row.unit}</span>{row.preferred_language !== "English" && <Tag>{row.preferred_language}</Tag>}{row.scenario_label && <span className="text-sm text-faint">{row.scenario_label}</span>}</p>
-      <blockquote lang={LANG[row.preferred_language] ?? "en"} className={cx("mt-2 max-w-[62ch] border-l-2 border-border-strong pl-3 text-base min-[1700px]:hidden", !more && long && "line-clamp-4")}>{row.text}</blockquote>
-      {long && <button type="button" onClick={() => setMore((m) => !m)} className="mt-1 min-h-11 text-sm text-muted underline min-[1700px]:hidden underline-offset-4 hover:text-text md:min-h-6">{more ? "Show less" : "Show more"}</button>}
+      <blockquote lang={LANG[row.preferred_language] ?? "en"} className={cx("msg-body mt-2 max-w-[62ch] border-l-2 border-border-strong pl-3 text-base", !more && long && "line-clamp-4")}>{row.text}</blockquote>
+      {long && <button type="button" onClick={() => setMore((m) => !m)} className="msg-body mt-1 min-h-11 text-sm text-muted underline underline-offset-4 hover:text-text md:min-h-6">{more ? "Show less" : "Show more"}</button>}
     </header>
   );
 }
