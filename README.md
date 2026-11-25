@@ -22,12 +22,21 @@ cp .env.example .env                # then edit: set PROVIDER_MODE and, for live
 docker compose up -d                # Postgres 16 (or any Postgres; see .env.example)
 npm run migrate && npm run seed
 npm run models                      # prints the effective PROVIDER_MODE and checks each model ID
+npm run doctor                      # full pre-flight (env, DB roles, migrations, models, billed one-token round trips)
 npm run dev
 ```
 
 **Mode rule:** the app runs in `mock` (free, labelled "Mock") unless `PROVIDER_MODE=live` is set in `.env`. A key alone does not switch it on. If a key is set while the mode is mock, the status bar and `/api/demo/status` show an amber hint: "Mock mode is on although a model key is set: set PROVIDER_MODE=live and restart". Restart `npm run dev` after editing `.env`.
 
-Checks: `npm run typecheck`, `npm test`, `npm run contrast` (WCAG AA token check).
+Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run contrast` (WCAG AA tokens), `npm run e2e` (Playwright, headers/CSP/flows; `npx playwright install chromium` first), `npm run e2e:layout` (width/zoom matrix against a production build), `npm run e2e:stale` (dev server: stale stylesheet and service-worker diagnosis). Production: refuses `PROVIDER_MODE=mock`. See `docs/NEON.md` (deploy) and `docs/RUNBOOK.md` (operations).
+
+### After pulling new code
+
+```bash
+npm run migrate && npm run seed
+```
+
+A database that is behind the code answers `503 {"code":"schema_out_of_date","hint":"Run: npm run migrate && npm run seed"}` (never an opaque 500), `npm run dev` prints a warning before it starts (`scripts/doctor-quick.ts`, warn-only), and the inbox shows a setup panel until every demo scenario has a real (non-fallback) baseline draft. `npm run seed` exits non-zero and lists the scenarios it could not baseline if the model provider is down; re-running it replaces fallback baselines.
 
 ## Plug in your LLM (free tier: Groq or any OpenAI-compatible API)
 
@@ -86,9 +95,17 @@ See `.env.example` (every variable is commented). Secrets stay server side; `.en
 
 Measured so far (mock only, tests the application, not model quality): tier 1, 20/20, S0 0, S1 0. Tier 2 on 50 cases: 40/50, S0 1, S1 9, S2 7, **gate FAIL**. See `docs/DECISIONS.md` #27-29 for the causes: crude mock heuristics, an over-cautious clause-conflict check (`lease-03`) and an open finding (`abs-05`) that only a real semantic-check model can catch. The mock adjudicator reproduces the old rank heuristic, so these numbers did not change after adding the adjudication step; whether a real model fixes `lease-03` and `abs-05` is unverified. Live and replay results: none yet.
 
+## Real-time, load and performance
+
+- Live updates use Server-Sent Events (`GET /api/runs/:id/events`) with an automatic polling fallback. Caps: `SSE_MAX_PER_IP`, `SSE_MAX_GLOBAL`.
+- Model calls are limited per instance (`LLM_MAX_CONCURRENCY`, `LLM_QUEUE_WAIT_MS`); beyond that the draft falls back visibly as "busy".
+- `/system` shows runs, latency by stage, retry rate, provider headroom, budget and limits.
+- `npm run load -- 50` (set `TRUST_PROXY=1` on the server and a high `DEMO_DAILY_BUDGET_USD`), `npm run perf`, `npm run explain`. Results and caveats: docs/PERF.md.
+- Ctrl/Cmd+K opens the command palette. If the page ever looks unstyled: `npm run clean`, restart, and open `/setup/layout` (development).
+
 ## Verified vs not verified
 
-- Verified (local Postgres 16): typecheck clean; 257 tests pass, 8 skipped; RLS isolation; budget atomicity; pipeline with mock; OpenAI-compatible provider against a local stub; UI and API smoke on the mock.
+- Verified (local Postgres 16): typecheck clean; 383 tests pass, 8 skipped; RLS isolation; budget atomicity; pipeline with mock; OpenAI-compatible provider against a local stub; UI and API smoke on the mock.
 - **Not verified**: any real model (Groq, Anthropic); Neon (isolation tests skipped there); Vercel deployment; live eval numbers; prompt quality for Hindi/Telugu.
 
 ## Known limitations
