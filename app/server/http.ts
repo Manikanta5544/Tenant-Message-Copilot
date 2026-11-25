@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
+import { noteEvent } from "@/core/counters";
 import { z } from "zod";
 import { HttpError } from "@/db/runs";
 import { randomUUID } from "node:crypto";
+import { trustedClientIp, readVisitorId } from "@/core/visitor";
 import { EnvError, getEnv, trustsProxy, type Env } from "@/core/env";
 import { logError, redactSecrets, safeErrorMessage } from "@/core/log";
 import { ConfigMissingError, DbUnavailableError, asDbUnavailable } from "@/core/db-errors";
@@ -8,7 +11,13 @@ import { SchemaOutOfDateError, SCHEMA_HINT, isSchemaDriftCode } from "@/core/sch
 
 /** Same-shape JSON errors, sanitised: never a stack, SQL text or provider message. */
 export function fail(e: unknown, req?: Request): Response {
-  if (e instanceof HttpError) return Response.json({ error: e.message, ...(e.status === 429 ? { code: /daily run limit/.test(e.message) ? "budget_exhausted" : "rate_limited" } : {}), ...(e.extra ?? {}) }, { status: e.status, headers: e.extra?.retry_after_s ? { "retry-after": String(e.extra.retry_after_s) } : undefined });
+  if (e instanceof HttpError && e.status === 429) {
+    noteEvent("rate_limited");
+    // Every 429 says when to come back, in the header and the body, so the client can show the reset time.
+    const wait = Number(e.extra?.retry_after_s) > 0 ? Number(e.extra?.retry_after_s) : 60;
+    return Response.json({ error: e.message, code: /daily run limit/.test(e.message) ? "budget_exhausted" : "rate_limited", ...(e.extra ?? {}), retry_after_s: wait }, { status: 429, headers: { "retry-after": String(wait) } });
+  }
+  if (e instanceof HttpError) return Response.json({ error: e.message, ...(e.extra ?? {}) }, { status: e.status });
   if (e instanceof z.ZodError) return Response.json({ error: "invalid request", issues: e.issues.slice(0, 3).map((i) => `${i.path.join(".")}: ${i.message}`) }, { status: 400 });
   if (e instanceof EnvError) {
     // Misconfiguration: log the readable list for the operator, show visitors a plain maintenance message.
@@ -54,12 +63,28 @@ export async function readJson<T>(req: Request, schema: z.ZodType<T>): Promise<T
 }
 
 /**
- * Client identity for rate limits. x-forwarded-for is trusted only behind Vercel (VERCEL=1) or when the operator
- * sets TRUST_PROXY=1; anywhere else the header is attacker-controlled, so it is ignored. The App Router exposes
- * no socket address on Request, so untrusted traffic shares one conservative bucket ("untrusted") rather than
- * letting a client mint unlimited identities by rotating the header. Documented in docs/RUNBOOK.md.
+ * Client identity for rate limits and visitor scoping. Behind a trusted proxy (VERCEL=1 or TRUST_PROXY=1) it is the address the proxy
+ * reports (x-vercel-forwarded-for, x-real-ip, else the Nth entry from the RIGHT of x-forwarded-for; TRUSTED_PROXY_HOPS). Otherwise every
+ * forwarding header is attacker-controlled and ignored, and the identity is the signed visitor cookie. A request with neither a usable
+ * address nor a valid cookie shares one "untrusted" bucket, so rotating headers or sending no cookie never mints identities.
+ * The App Router exposes no socket address on Request. Documented in docs/RUNBOOK.md.
  */
-export function clientKey(req: Request, env: Pick<Env, "VERCEL" | "TRUST_PROXY"> = getEnv()) {
-  if (!trustsProxy(env)) return { ip: "untrusted" };
-  return { ip: (req.headers.get("x-forwarded-for") ?? "").split(",")[0]!.trim() || "local" };
+export function clientKey(req: Request, env: Pick<Env, "VERCEL" | "TRUST_PROXY"> & Partial<Pick<Env, "TRUSTED_PROXY_HOPS" | "VISITOR_SALT">> = getEnv()) {
+  if (trustsProxy(env)) {
+    const ip = trustedClientIp(req.headers, env.TRUSTED_PROXY_HOPS ?? 1, env.VERCEL === "1");
+    if (ip) return { ip };
+  }
+  const id = readVisitorId(req.headers.get("cookie"), env.VISITOR_SALT ?? "demo");
+  return { ip: id ? `c:${id}` : "untrusted" };
+}
+
+/** JSON with a weak ETag over the body, and a bodiless 304 when the caller already holds it (If-None-Match).
+ *  `private, no-cache` means the browser must ask every time, so data is never stale; the 304 saves the transfer and the client's parse and render. */
+export function jsonWithEtag(req: Request, body: unknown, headers: Record<string, string> = {}): Response {
+  const text = JSON.stringify(body);
+  const etag = `W/"${createHash("sha1").update(text).digest("base64url").slice(0, 22)}"`;
+  const h = { ...headers, etag, "cache-control": "private, no-cache", vary: "cookie" };
+  const inm = req.headers.get("if-none-match");
+  if (inm && inm.split(",").some((t) => t.trim() === etag || t.trim() === "*")) return new Response(null, { status: 304, headers: h });
+  return new Response(text, { status: 200, headers: { ...h, "content-type": "application/json" } });
 }
