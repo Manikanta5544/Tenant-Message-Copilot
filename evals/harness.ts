@@ -27,13 +27,13 @@ export const unlimitedBudget = (): BudgetPort & { settled: number[] } => {
 
 export interface HarnessRun { output: PipelineOutput; events: TraceEvent[]; resident: Resident }
 export async function runMessage(a: {
-  appUrl: string; ownerUrl: string; provider: LLMProvider; unit: string; org?: "A" | "B"; message: string; asOf: string; budget?: BudgetPort;
+  appUrl: string; ownerUrl: string; provider: LLMProvider; unit: string; org?: "A" | "B"; message: string; asOf: string; budget?: BudgetPort; prefetch?: boolean;
 }): Promise<HarnessRun> {
   const resident = await findResident(a.ownerUrl, a.unit, a.org ?? "A");
   const events: TraceEvent[] = [];
   const store = makeScopedStore(a.appUrl, { orgId: resident.org, residentId: resident.id });
   const output = await runPipeline(
-    { provider: a.provider, store, budget: a.budget ?? unlimitedBudget(), emit: async (e) => { events.push(e); }, now: () => performance.now() },
+    { provider: a.provider, store, prefetch: a.prefetch, budget: a.budget ?? unlimitedBudget(), emit: async (e) => { events.push(e); }, now: () => performance.now() },
     { message: a.message, residentId: resident.id, ownUnit: resident.unit, preferredLanguage: resident.language, asOf: a.asOf });
   return { output, events, resident };
 }

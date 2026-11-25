@@ -4,13 +4,10 @@
 //   2. PowerShell:  $env:DARKREADER_DIR="C:\ext\darkreader"; $env:BASE_URL="http://localhost:3000"; npm run e2e:darkreader
 //      bash:        DARKREADER_DIR=/path/to/darkreader BASE_URL=http://localhost:3000 npm run e2e:darkreader
 // Extensions need a headed (or new-headless) persistent context, so this launches a visible Chromium window.
-import { createRequire } from "node:module";
+import { chromium } from "playwright";
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
-const require = createRequire(import.meta.url);
-let chromium;
-try { ({ chromium } = require("playwright")); } catch { ({ chromium } = createRequire(`${process.env.GLOBAL_NODE_MODULES ?? ""}/x.js`)("playwright")); }
 const dir = process.env.DARKREADER_DIR;
 if (!dir || !fs.existsSync(path.join(dir, "manifest.json"))) { console.error("Set DARKREADER_DIR to the unpacked Dark Reader folder (it must contain manifest.json). See the header of e2e/darkreader.mjs."); process.exit(2); }
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";

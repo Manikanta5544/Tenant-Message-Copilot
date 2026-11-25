@@ -4,7 +4,7 @@ import pg from "pg";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { EnvError, parseEnv, rawEnv, type Env, type RawEnv } from "../core/env";
-import { modelAvailability, openAICompatFromEnv } from "../core/providers/openai-compat";
+import { ASSUMED_PRICES_DATE, modelAvailability, openAICompatFromEnv } from "../core/providers/openai-compat";
 import { MIGRATIONS } from "../db/manifest";
 
 export interface CheckResult { name: string; ok: boolean; skipped?: boolean; detail: string; hint?: string }
@@ -60,6 +60,14 @@ export async function doctor(raw: RawEnv = rawEnv(), o: { roundtrip?: boolean; f
   if (env.LLM_PROVIDER === "anthropic") {
     out.push(skip("model availability", "anthropic backend: use the Anthropic console; doctor checks the OpenAI-compatible path"));
     return out;
+  }
+  {
+    // A model with no price cannot be budgeted: refuse it instead of silently counting zero.
+    const prov = openAICompatFromEnv({ ...raw, LLM_API_KEY: raw.LLM_API_KEY || "x" });
+    const unpriced = prov.unpricedModels();
+    out.push(unpriced.length
+      ? bad("model prices", `no price for model ${unpriced.join(", ")}: budget cannot be enforced (it is costed at a worst-case price meanwhile)`, `Set LLM_PRICES_JSON, for example {"${unpriced[0]}":{"in":150000,"out":600000}} (micro-USD per million tokens).`)
+      : ok("model prices", `all configured models have a price (assumed list prices dated ${ASSUMED_PRICES_DATE} unless overridden by LLM_PRICES_JSON)`));
   }
   const f = o.fetch ?? fetch;
   const av = await modelAvailability(raw, f);

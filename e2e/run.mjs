@@ -1,10 +1,7 @@
 // End-to-end checks against a running server (BASE_URL, default http://localhost:3000):
 // security headers on pages and /api/*, nonce CSP with zero violations, no console errors, no horizontal scroll.
-// Needs Playwright (`npx playwright install chromium`); it is not a dependency of the app.
-import { createRequire } from "node:module";
-const require = createRequire(import.meta.url);
-let chromium;
-try { ({ chromium } = require("playwright")); } catch { ({ chromium } = createRequire(`${process.env.GLOBAL_NODE_MODULES ?? ""}/x.js`)("playwright")); }
+// Needs the Chromium build for the pinned Playwright: `npx playwright install chromium`.
+import { chromium } from "playwright";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const PAGES = (process.env.E2E_PAGES ?? "/,/evals,/about").split(",");
@@ -90,6 +87,10 @@ const labelLinks = (page) => page.evaluate(() => [...document.querySelectorAll('
   check(/<meta[^>]+name="darkreader-lock"/.test(html), '<meta name="darkreader-lock"> is present in the served HTML');
 }
 import { layoutMatrix } from "./layout.mjs";
+import { cssFaultCheck } from "./css-fault.mjs";
+import { featureChecks } from "./features.mjs";
+await cssFaultCheck({ browser, BASE, check, dev: !prod });
+if (process.env.E2E_FLOWS !== "0") await featureChecks({ browser, BASE, check });
 await layoutMatrix({ browser, BASE, check, tolerateApiErrors: process.env.E2E_FLOWS === "0" });
 // The error boundary (dev/e2e route only; 404 in production): renders with a reference id and produces no "script tag" warning.
 if (!prod) {
