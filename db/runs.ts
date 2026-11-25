@@ -120,6 +120,20 @@ export async function getRun(runId: string): Promise<{ run: RunView; trace: Trac
   };
 }
 
+/** One cheap query for the live stream: the run's status plus the trace rows after `afterSeq`. Same scope as getRun. */
+export async function pollRun(runId: string, afterSeq: number): Promise<{ status: string; age_s: number; events: TraceRow[] } | null> {
+  return withScope(appUrl(), { orgId: DEMO_ORG_ID, view: "inbox" }, async (db) => {
+    const r = await db.query(
+      `SELECT r.status, extract(epoch FROM (now() - r.created_at))::float AS age_s,
+              COALESCE((SELECT json_agg(x ORDER BY x.seq) FROM (SELECT seq, stage, model, tokens_in, tokens_out, cost_micro_usd::text AS cost, latency_ms, outcome, payload, created_at
+                          FROM trace_events WHERE run_id = r.id AND seq > $2 ORDER BY seq) x), '[]'::json) AS ev
+         FROM runs r WHERE r.id = $1`, [runId, afterSeq]);
+    const x = r.rows[0] as { status: string; age_s: number; ev: TraceDbRow[] } | undefined;
+    if (!x) return null;
+    return { status: x.status, age_s: x.age_s, events: x.ev.map((t): TraceRow => ({ seq: t.seq, stage: t.stage, model: t.model, tokens_in: t.tokens_in, tokens_out: t.tokens_out, cost_micro_usd: Number(t.cost), latency_ms: t.latency_ms, outcome: t.outcome, payload: redact(t.payload), created_at: new Date(t.created_at).toISOString() })) };
+  });
+}
+
 export interface RunHandle {
   runId: string; created: boolean;
   /** Present only when this call created the run; executes the pipeline and persists every step. */
@@ -128,6 +142,9 @@ export interface RunHandle {
 
 /** Creates the run (or returns the existing one for this idempotency key). Limits are enforced inside the same
  *  transaction as the insert, under a per-visitor advisory lock, so a rejected run leaves no row and no used slot. */
+/** A 'running' row older than this belongs to a dead process (maxDuration is 60 s). */
+const STALE_RUN_S = 120;
+
 export async function createRun(a: { messageId: string; idempotencyKey: string; provider: LLMProvider; visitor: string | null }): Promise<RunHandle> {
   const url = appUrl();
   const asOf = demoAsOf();
@@ -143,6 +160,12 @@ export async function createRun(a: { messageId: string; idempotencyKey: string; 
   // The inbox view is added so the visitor's runs can be counted across residents; inserts still need the strict scope.
   const inserted = await withScope(url, { ...scope, view: "inbox" }, async (db) => {
     if (a.visitor) await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`run:${a.visitor}`]);
+    // Single flight per (message, visitor): the lock serialises concurrent POSTs; the partial unique index is the backstop.
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`flight:${msg.id}:${a.visitor ?? ""}`]);
+    // A run whose process died stays 'running'; after STALE_RUN_S it is closed so it cannot block the message forever.
+    await db.query(`UPDATE runs SET status='failed', finished_at=now() WHERE message_id=$1 AND COALESCE(visitor_hash,'')=$2 AND status='running' AND created_at < now() - ($3 || ' seconds')::interval`, [msg.id, a.visitor ?? "", String(STALE_RUN_S)]);
+    const same = await db.query(`SELECT id FROM runs WHERE message_id=$1 AND COALESCE(visitor_hash,'')=$2 AND status='running' AND idempotency_key <> $3 LIMIT 1`, [msg.id, a.visitor ?? "", a.idempotencyKey]);
+    if (same.rowCount === 1) return { id: same.rows[0].id as string, message_id: msg.id };
     const r = await db.query(
       `INSERT INTO runs (id, organization_id, resident_id, message_id, prompt_version, mode, status, idempotency_key, visitor_hash)
        VALUES ($1,$2,$3,$4,$5,$6,'running',$7,$8) ON CONFLICT (organization_id, idempotency_key) DO NOTHING RETURNING id`,

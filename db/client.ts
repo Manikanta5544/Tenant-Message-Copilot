@@ -22,6 +22,16 @@ export type Scope = {
 type PoolLike = { connect(): Promise<ClientLike>; end(): Promise<void> };
 type ClientLike = Queryable & { release(err?: boolean | Error): void };
 
+/** Small on purpose: a serverless or pooled Postgres has few connections to give, and every query here is a short indexed lookup (see docs/PERF.md).
+ *  Idle clients are released after 10 s so a quiet instance holds none; a statement that runs over 8 s is cancelled by the server. */
+export const POOL_MAX = 3, IDLE_MS = 10_000, STATEMENT_MS = 8_000;
+const waits: number[] = [];
+/** How long callers waited for a pooled connection (last 500), for /system and the load test. */
+export function poolWaitStats() {
+  const w = [...waits].sort((a, b) => a - b);
+  return { samples: w.length, p50_ms: w.length ? w[Math.floor(w.length * 0.5)]! : 0, p95_ms: w.length ? w[Math.min(w.length - 1, Math.floor(w.length * 0.95))]! : 0, max_ms: w.length ? w[w.length - 1]! : 0 };
+}
+
 const pools = new Map<string, Promise<PoolLike>>();
 
 async function makePool(url: string): Promise<PoolLike> {
@@ -30,12 +40,12 @@ async function makePool(url: string): Promise<PoolLike> {
     const neon = await import("@neondatabase/serverless");
     const ws = (await import("ws")).default;
     neon.neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket;
-    const np = new neon.Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 5000 });
+    const np = new neon.Pool({ connectionString: url, max: POOL_MAX, idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, connectionTimeoutMillis: 5000 });
     np.on("error", (err: Error) => console.error("[db] idle client error", err.name));
     return np as unknown as PoolLike;
   }
   // Fail fast when the host is unreachable (default is to wait forever).
-  const pool = new pg.Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 5000 });
+  const pool = new pg.Pool({ connectionString: url, max: POOL_MAX, idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, connectionTimeoutMillis: 5000 });
   // An idle client can error (server restart, Neon scale-to-zero). Unhandled, that event would crash the function instance.
   pool.on("error", (err) => console.error("[db] idle client error", err.name));
   return pool as unknown as PoolLike;
@@ -49,7 +59,8 @@ export function getPool(url: string): Promise<PoolLike> {
 
 /** Connects a client; a connection or login failure becomes DbUnavailableError (classified, host and port only, no credentials). */
 export async function connectClient(url: string): Promise<ClientLike> {
-  try { return await (await getPool(url)).connect(); }
+  const t0 = performance.now();
+  try { const c = await (await getPool(url)).connect(); waits.push(performance.now() - t0); if (waits.length > 500) waits.shift(); return c; }
   catch (e) {
     const mapped = asDbUnavailable(e, url);
     if (mapped instanceof DbUnavailableError) console.error(JSON.stringify({ level: "error", msg: "database connection failed", kind: mapped.kind, host: mapped.host, port: mapped.port }));

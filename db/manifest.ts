@@ -8,4 +8,5 @@ export const MIGRATIONS = [
   "0006_abuse_limits.sql",
   "0007_review_actions.sql",
   "0008_visitor_run_selection.sql",
+  "0009_single_flight.sql",
 ] as const;
