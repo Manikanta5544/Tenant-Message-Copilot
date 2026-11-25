@@ -13,7 +13,8 @@ process.env.DATABASE_URL_APP = APP_URL;
 process.env.DEMO_AS_OF_DATE = "2026-11-19";
 process.env.DEMO_DAILY_BUDGET_USD = "50";
 const msg = (n: number) => uid("message", n);
-const go = (key = randomUUID(), visitor: string | null = null) => createRun({ messageId: msg(1), idempotencyKey: key, provider: new MockProvider(), visitor });
+// One run per (message, visitor) at a time, so tests that start several runs for one visitor use different messages.
+const go = (key = randomUUID(), visitor: string | null = null, n = 1) => createRun({ messageId: msg(n), idempotencyKey: key, provider: new MockProvider(), visitor });
 
 describe("budget day", () => {
   it("is the real UTC date, so it changes from one day to the next", () => {
@@ -49,7 +50,7 @@ describe.skipIf(!HAS_DB)("abuse limits (database)", () => {
   it("the per-visitor hourly run limit holds even when many requests arrive at once, and a rejected run leaves no row", async () => {
     process.env.RATE_LIMIT_PER_HOUR = "3";
     const v = visitorHash(`198.51.100.${Math.floor(Math.random() * 200)}`);
-    const out = await Promise.allSettled(Array.from({ length: 8 }, () => go(randomUUID(), v)));
+    const out = await Promise.allSettled(Array.from({ length: 8 }, (_, i) => go(randomUUID(), v, 1 + i)));
     delete process.env.RATE_LIMIT_PER_HOUR;
     expect(out.filter((o) => o.status === "fulfilled").length).toBe(3);
     expect(out.filter((o) => o.status === "rejected" && (o.reason as { status?: number }).status === 429).length).toBe(5);
@@ -69,8 +70,8 @@ describe.skipIf(!HAS_DB)("abuse limits (database)", () => {
   it("one visitor cannot use more than their own daily share of runs", async () => {
     process.env.RATE_LIMIT_PER_DAY = "2";
     const v = visitorHash(`100.64.0.${Math.floor(Math.random() * 200)}`);
-    await go(randomUUID(), v); await go(randomUUID(), v);
-    await expect(go(randomUUID(), v)).rejects.toMatchObject({ status: 429 });
+    await go(randomUUID(), v, 1); await go(randomUUID(), v, 2);
+    await expect(go(randomUUID(), v, 3)).rejects.toMatchObject({ status: 429 });
     delete process.env.RATE_LIMIT_PER_DAY;
     // another visitor is unaffected
     await expect(go(randomUUID(), visitorHash("100.64.1.1"))).resolves.toMatchObject({ created: true });

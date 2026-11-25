@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { MockProvider } from "../core/providers/mock";
 import { closeAllPools } from "../db/client";
 import { ORG_A, RES, uid } from "../db/ids";
-import { HttpError, createMessage, getRun, listInbox, recentRunCount, startRun, visitorHash } from "../db/runs";
+import { HttpError, createMessage, createRun, getRun, listInbox, recentRunCount, startRun, visitorHash } from "../db/runs";
 import { APP_URL, HAS_DB, OWNER_URL } from "./helpers";
 
 process.env.DATABASE_URL_APP = APP_URL;
@@ -80,13 +80,13 @@ describe.skipIf(!HAS_DB)("run service", () => {
 
   it("marks an unfinished run failed on the next read once it is stale, and leaves a fresh one alone", async () => {
     const c = new pg.Client({ connectionString: OWNER_URL }); await c.connect();
-    const mk = async (ageSeconds: number) => {
+    const mk = async (ageSeconds: number, visitor: string) => {
       const id = randomUUID();
-      await c.query(`INSERT INTO runs (id, organization_id, resident_id, message_id, prompt_version, mode, status, idempotency_key, created_at)
-        VALUES ($1,$2,$3,$4,'v1','mock','running',$5, now() - ($6 || ' seconds')::interval)`, [id, ORG_A, RES.ravi, msg(1), randomUUID(), String(ageSeconds)]);
+      await c.query(`INSERT INTO runs (id, organization_id, resident_id, message_id, prompt_version, mode, status, idempotency_key, visitor_hash, created_at)
+        VALUES ($1,$2,$3,$4,'v1','mock','running',$5,$7, now() - ($6 || ' seconds')::interval)`, [id, ORG_A, RES.ravi, msg(1), randomUUID(), String(ageSeconds), visitor]);
       return id;
     };
-    const stale = await mk(600), fresh = await mk(5);
+    const stale = await mk(600, "stale-v"), fresh = await mk(5, "fresh-v");
     await c.end();
     expect((await getRun(stale))!.run.status).toBe("failed");
     expect((await getRun(fresh))!.run.status).toBe("running");
@@ -101,5 +101,36 @@ describe.skipIf(!HAS_DB)("run service", () => {
     await c.end();
     const t = JSON.stringify((await getRun(runId))!.trace[0]);
     expect(t).not.toMatch(/SECRET PROMPT|thoughts|sk-ant-abc123/);
+  });
+});
+
+describe.skipIf(!HAS_DB)("single flight per (message, visitor)", () => {
+  afterAll(closeAllPools);
+
+  it("20 concurrent POSTs for one message and visitor execute exactly one pipeline and return one run id", async () => {
+    let executions = 0;
+    const slow = () => { const p = new MockProvider(); const orig = p.classify.bind(p); p.classify = (async (...a: Parameters<typeof orig>) => { executions++; await new Promise((r) => setTimeout(r, 300)); return orig(...a); }) as typeof p.classify; return p; };
+    const visitor = visitorHash("203.0.113.77");
+    const handles = await Promise.all(Array.from({ length: 20 }, () => createRun({ messageId: msg(3), idempotencyKey: randomUUID(), provider: slow(), visitor })));
+    const ids = new Set(handles.map((h) => h.runId));
+    expect(ids.size).toBe(1);
+    expect(handles.filter((h) => h.created)).toHaveLength(1);
+    await Promise.all(handles.map((h) => h.execute?.()));
+    expect(executions).toBe(1);
+    expect((await getRun([...ids][0]!))!.run.status).toBe("completed");
+  });
+
+  it("a finished run no longer blocks: the next POST starts a new run", async () => {
+    const visitor = visitorHash("203.0.113.78");
+    const a = await startRun({ messageId: msg(3), idempotencyKey: randomUUID(), provider: provider(), visitor });
+    const b = await startRun({ messageId: msg(3), idempotencyKey: randomUUID(), provider: provider(), visitor });
+    expect(a.runId).not.toBe(b.runId);
+    expect(b.created).toBe(true);
+  });
+
+  it("two different visitors can run the same message at the same time", async () => {
+    const [x, y] = await Promise.all(["203.0.113.80", "203.0.113.81"].map((ip) => createRun({ messageId: msg(4), idempotencyKey: randomUUID(), provider: provider(), visitor: visitorHash(ip) })));
+    expect(x!.runId).not.toBe(y!.runId);
+    await Promise.all([x!.execute?.(), y!.execute?.()]);
   });
 });

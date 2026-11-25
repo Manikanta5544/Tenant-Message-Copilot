@@ -27,10 +27,14 @@ describe("doctor", () => {
     expect(r.map((c) => c.name)).toEqual(expect.arrayContaining(["database (owner role)", "RLS role is non-bypass", "migrations current"]));
   });
   it.skipIf(!HAS_DB)("live: flags a configured model the key does not list, and prints billed round trips", async () => {
-    const base = { DATABASE_URL_OWNER: OWNER_URL, DATABASE_URL_APP: APP_URL, PROVIDER_MODE: "live", LLM_API_KEY: "k", LLM_MODEL_TRIAGE: "a/x", LLM_MODEL_DRAFT: "a/y", LLM_MODEL_CHECK: "a/x" };
+    const base = { DATABASE_URL_OWNER: OWNER_URL, DATABASE_URL_APP: APP_URL, PROVIDER_MODE: "live", LLM_API_KEY: "k", LLM_MODEL_TRIAGE: "a/x", LLM_MODEL_DRAFT: "a/y", LLM_MODEL_CHECK: "a/x", LLM_PRICES_JSON: JSON.stringify({ "a/x": { in: 1, out: 1 }, "a/y": { in: 1, out: 1 } }) };
     const good = await doctor(base, { fetch: modelsOk(["a/x", "a/y"]) });
     expect(good.filter((c) => !c.ok)).toEqual([]);
     expect(good.find((c) => c.name === "model round trip: draft")!.detail).toMatch(/BILLED: 3 in \/ 1 out/);
+    // A model with no price makes doctor fail: the budget could not be enforced.
+    const unpriced = await doctor({ ...base, LLM_PRICES_JSON: undefined }, { fetch: modelsOk(["a/x", "a/y"]) });
+    expect(unpriced.find((c) => c.name === "model prices")).toMatchObject({ ok: false });
+    expect(unpriced.find((c) => c.name === "model prices")?.detail).toMatch(/no price for model a\/x, a\/y: budget cannot be enforced/);
     const miss = await doctor({ ...base, LLM_MODEL_CHECK: "bad/model" }, { fetch: modelsOk(["a/x", "a/y"]) });
     const f = miss.filter((c) => !c.ok).map((c) => c.name);
     expect(f).toContain("model availability");

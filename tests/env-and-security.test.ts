@@ -81,8 +81,8 @@ describe("clientKey trust", () => {
     expect(clientKey(req("1.2.3.4"), { VERCEL: undefined, TRUST_PROXY: false }).ip).toBe("untrusted");
     expect(clientKey(req("9.9.9.9"), { VERCEL: undefined, TRUST_PROXY: false }).ip).toBe("untrusted");
   });
-  it("uses the first forwarded address behind Vercel or TRUST_PROXY=1", () => {
-    expect(clientKey(req("1.2.3.4, 10.0.0.1"), { VERCEL: "1", TRUST_PROXY: false }).ip).toBe("1.2.3.4");
+  it("uses the address the trusted proxy appended (the rightmost entry) behind Vercel or TRUST_PROXY=1", () => {
+    expect(clientKey(req("1.2.3.4, 10.0.0.1"), { VERCEL: "1", TRUST_PROXY: false }).ip).toBe("10.0.0.1");
     expect(clientKey(req("5.6.7.8"), { VERCEL: undefined, TRUST_PROXY: true }).ip).toBe("5.6.7.8");
   });
 });

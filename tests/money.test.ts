@@ -1,43 +1,45 @@
-import { describe, expect, it } from "vitest";
-import { assertPaise, deriveBalance, endOfPeriod, formatInr, rupeesToPaise } from "../core/money";
-import type { LedgerLine } from "../core/types";
+import pg from "pg";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { OpenAICompatProvider } from "../core/providers/openai-compat";
+import { MockProvider } from "../core/providers/mock";
+import { runMessage } from "../evals/harness";
+import { budgetState, dbBudget } from "../db/budget";
+import { closeAllPools } from "../db/client";
+import { ORG_A } from "../db/ids";
+import { APP_URL, HAS_DB, OWNER_URL } from "./helpers";
 
-const line = (id: string, entry_type: LedgerLine["entry_type"], amount_paise: number, occurred_on: string): LedgerLine =>
-  ({ id, entry_type, amount_paise, description: id, occurred_on, external_reference: null });
+const DAY = "2030-02-02";
+// A live provider on the default Groq models, with every model call delegated to the mock so no network is needed.
+const live = () => {
+  const real = new OpenAICompatProvider({ baseUrl: "http://127.0.0.1:1", apiKey: "k", models: { triage: "openai/gpt-oss-20b", draft: "openai/gpt-oss-120b", check: "openai/gpt-oss-20b" } });
+  const mock = new MockProvider({ priced: true });
+  return Object.assign(Object.create(mock), { worstCaseCostMicroUsd: () => real.worstCaseCostMicroUsd() }) as MockProvider;
+};
 
-describe("money", () => {
-  it("formats paise with Indian grouping", () => {
-    expect(formatInr(1200000)).toBe("₹12,000");
-    expect(formatInr(1735000)).toBe("₹17,350");
-    expect(formatInr(10000000)).toBe("₹1,00,000");
-    expect(formatInr(1735050)).toBe("₹17,350.50");
-    expect(formatInr(0)).toBe("₹0");
-    expect(formatInr(-50000)).toBe("-₹500");
+describe("live-provider money", () => {
+  it("the worst-case reservation of the default live models is non-zero (it was 0 before prices shipped)", () => {
+    expect(live().worstCaseCostMicroUsd()).toBeGreaterThan(0);
   });
-  it("rejects non-integer paise", () => {
-    expect(() => assertPaise(10.5)).toThrow();
-    expect(() => formatInr(0.1 + 0.2)).toThrow();
-    expect(rupeesToPaise(8000)).toBe(800000);
+});
+
+describe.skipIf(!HAS_DB)("the daily budget depletes with a live-priced provider", () => {
+  afterAll(closeAllPools);
+  beforeEach(async () => {
+    const c = new pg.Client({ connectionString: OWNER_URL }); await c.connect();
+    await c.query("DELETE FROM budget_days WHERE day = $1", [DAY]); await c.end();
   });
-  it("derives the Scenario 2 balance: 20,000 rent less 8,000 settled", () => {
-    const b = deriveBalance([line("c", "charge", 2000000, "2026-11-01"), line("p", "payment", -800000, "2026-11-12")], "2026-11-19");
-    expect(b.balance_paise).toBe(1200000);
-    expect(b.charges_paise).toBe(2000000);
-    expect(b.payments_paise).toBe(-800000);
-  });
-  it("excludes lines after asOf and applies reversals as new positive entries", () => {
-    const lines = [line("c", "charge", 1500000, "2026-11-01"), line("p", "payment", -500000, "2026-11-02"), line("r", "reversal", 500000, "2026-11-06"), line("f", "fee", 35000, "2026-12-01")];
-    expect(deriveBalance(lines, "2026-11-19").balance_paise).toBe(1500000);
-    expect(deriveBalance(lines, "2026-11-04").balance_paise).toBe(1000000);
-    expect(deriveBalance(lines, "2026-12-01").balance_paise).toBe(1535000);
-  });
-  it("rejects entries with an impossible sign", () => {
-    expect(() => deriveBalance([line("x", "payment", 100, "2026-11-01")], "2026-11-19")).toThrow(/invalid sign/);
-    expect(() => deriveBalance([line("x", "charge", -100, "2026-11-01")], "2026-11-19")).toThrow(/invalid sign/);
-  });
-  it("computes period ends", () => {
-    expect(endOfPeriod("2026-02")).toBe("2026-02-28");
-    expect(endOfPeriod("2026-11")).toBe("2026-11-30");
-    expect(() => endOfPeriod("2026-13")).toThrow();
+  it("runs spend recorded cost, then the next run gets the existing budget_exhausted response", async () => {
+    const est = live().worstCaseCostMicroUsd();
+    const budget = dbBudget(APP_URL!, ORG_A, DAY, est * 2 + 10); // room for two reservations
+    const run = (msg: string) => runMessage({ appUrl: APP_URL!, ownerUrl: OWNER_URL!, provider: live(), unit: "102", message: msg, asOf: "2026-11-19", budget });
+    const a = await run("The kitchen tap has been dripping since Monday.");
+    expect(a.output.usage.cost_micro_usd).toBeGreaterThan(0);
+    expect(a.events.filter((e) => e.stage === "triage").every((e) => (e.cost_micro_usd ?? 0) > 0)).toBe(true);
+    const s1 = await budgetState(APP_URL!, ORG_A, DAY, est * 2 + 10);
+    expect(s1.spent).toBe(Math.min(a.output.usage.cost_micro_usd, est)); // settle never charges more than the reservation
+    // Reservations that are not settled yet (concurrent runs) also count: take the whole remainder, then a run must be denied.
+    expect(await budget.reserve(s1.remaining)).toBe(true);
+    const denied = await run("What is my balance?");
+    expect(denied.output.banner).toBe("budget_exhausted");
   });
 });

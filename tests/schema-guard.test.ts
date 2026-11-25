@@ -20,7 +20,7 @@ import { APP_URL, HAS_DB, OWNER_URL } from "./helpers";
 
 describe("schema version (pure)", () => {
   it("lists exactly the migrations the database lacks", () => {
-    expect(missingMigrations(MIGRATIONS.slice(0, 6), MIGRATIONS)).toEqual(["0007_review_actions.sql", "0008_visitor_run_selection.sql"]);
+    expect(missingMigrations(MIGRATIONS.slice(0, 6), MIGRATIONS)).toEqual(["0007_review_actions.sql", "0008_visitor_run_selection.sql", "0009_single_flight.sql"]);
     expect(missingMigrations(MIGRATIONS, MIGRATIONS)).toEqual([]);
   });
   it("a failed check is not cached; a passing one is", async () => {
@@ -123,7 +123,7 @@ describe.skipIf(!HAS_DB)("upgrade path: DB at 0006 -> new code -> migrate + seed
 
   it("after migrate: the schema guard passes without a restart, and with no baselines the inbox reports setup", async (ctx) => {
     if (!canCreate) return ctx.skip();
-    expect((await migrate(ownerU)).sort()).toEqual(["0007_review_actions.sql", "0008_visitor_run_selection.sql"]);
+    expect((await migrate(ownerU)).sort()).toEqual(["0007_review_actions.sql", "0008_visitor_run_selection.sql", "0009_single_flight.sql"]);
     await seed(ownerU);
     await ensureSchema(appUrl());
     expect(await countMissingBaselines()).toBe(5);
