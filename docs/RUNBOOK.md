@@ -15,9 +15,11 @@ All variables are declared and validated in `core/env.ts`; a bad value fails rea
 | `DEMO_AS_OF_DATE` | no | the "today" scenarios are computed against |
 | `DEMO_DAILY_BUDGET_USD`, `DEMO_MAX_RUNS_PER_DAY`, `RATE_LIMIT_PER_HOUR/DAY`, `MESSAGE_LIMIT_PER_HOUR` | no | cost and abuse limits |
 | `TRUST_PROXY` | no | `1` to trust `x-forwarded-for` behind your own proxy. Vercel (`VERCEL=1`) is trusted automatically. |
+| `TRUSTED_PROXY_HOPS` | no | Trusted proxies in front of the app (default `1`). The client address is the Nth entry from the right of `x-forwarded-for`. |
+| `HSTS_PRELOAD` | no | `1` adds `preload` to Strict-Transport-Security. Leave off unless you intend to submit the domain to the preload list (hard to undo, covers all subdomains). |
 | `REPO_URL` | no | links the recorded commit on the evals page |
 
-**Rate-limit identity.** `x-forwarded-for` is trusted only when `VERCEL=1` or `TRUST_PROXY=1`. Otherwise it is ignored (it is attacker-controlled) and all traffic shares one conservative bucket, because the App Router exposes no socket address. Behind your own proxy, set `TRUST_PROXY=1`.
+**Rate-limit identity.** Behind a trusted proxy (`VERCEL=1` or `TRUST_PROXY=1`) the client is `x-vercel-forwarded-for`, else `x-real-ip`, else the Nth address from the RIGHT of `x-forwarded-for` (`TRUSTED_PROXY_HOPS`, default 1); the left side is client-supplied and never used. An address that is not a valid IP is ignored. With no trusted proxy every forwarding header is ignored and the visitor is the signed `tmc_v` cookie a page load sets (HttpOnly, SameSite=Lax, one year). API calls without a valid cookie share one `untrusted` bucket, so a script gets a small shared ceiling rather than an identity per request. **Residual risk:** a client that loads the page, discards the cookie and repeats can still obtain fresh identities; the global daily run cap and daily budget (atomic in Postgres) are the hard stop. Every 429 carries `Retry-After` and `retry_after_s`.
 
 ## Checks
 - `GET /api/health`: liveness (process is up, no dependencies).
