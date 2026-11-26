@@ -3,8 +3,8 @@ import config from "../next.config";
 
 const original = process.env.NODE_ENV;
 afterEach(() => {
-  if (original === undefined) delete process.env.NODE_ENV;
-  else process.env.NODE_ENV = original;
+  if (original === undefined) delete (process.env as Record<string, string | undefined>).NODE_ENV;
+  else (process.env as Record<string, string | undefined>).NODE_ENV = original;
 });
 const cache = (h: { key: string; value: string }[]) => h.filter((x) => x.key.toLowerCase() === "cache-control");
 
@@ -24,12 +24,12 @@ describe("/_next/static cache headers", () => {
     expect(h).toContainEqual({ key: "X-Content-Type-Options", value: "nosniff" });
   });
   it("test and unset environments are treated as not production", async () => {
-    process.env.NODE_ENV = "test";
+    (process.env as Record<string, string | undefined>).NODE_ENV = "test";
     let rules = await config.headers!();
     let h = rules.find((r) => r.source === "/_next/static/:path*")!.headers;
     expect(cache(h)).toEqual([]);
 
-    delete process.env.NODE_ENV;
+    delete (process.env as Record<string, string | undefined>).NODE_ENV;
     rules = await config.headers!();
     h = rules.find((r) => r.source === "/_next/static/:path*")!.headers;
     expect(cache(h)).toEqual([]);
