@@ -1,84 +1,68 @@
-// Run after `next build`: asserts the emitted CSS contains the Tailwind utilities the layout depends on.
-// If Tailwind's source detection failed (for example on a path with spaces or brackets), the page would ship unstyled; this fails the build instead.
+// Run after `next build`: fail if the emitted CSS is missing layout-critical utilities or responsive rules.
 import fs from "node:fs";
 import path from "node:path";
 
 const dir = path.join(".next", "static");
 const files = [];
-(function walk(d) { for (const e of fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }) : []) { const p = path.join(d, e.name); e.isDirectory() ? walk(p) : p.endsWith(".css") && files.push(p); } })(dir);
-if (!files.length) { console.error(`check-css: no CSS found under ${dir}. Run "npm run build" first.`); process.exit(1); }
-const css = files.map((f) => fs.readFileSync(f, "utf8")).join("\n");
-// Utilities used by app/layout.tsx and the shell. A responsive variant is included on purpose: it is emitted as an @media block.
-const NEED = [[".h-dvh", /\.h-dvh\b/], [".sr-only", /\.sr-only\b/], [".grid", /\.grid\{|\.grid,|\.grid\s*\{/], [".flex", /\.flex\{|\.flex,|\.flex\s*\{/], [".hidden", /\.hidden\{|\.hidden,|\.hidden\s*\{/], ["a responsive variant (md:)", /\.md\\:flex-row|\.md\\:w-14|\.md\\:hidden/], [".bg-accent", /\.bg-accent\b/]];
-// Responsive rules must be real @media blocks, not just class names: the page showed the mobile layout at 1920 px when they were not applied.
-/** Returns the text of every @media block whose condition matches `cond`, with nested braces balanced. */
-function mediaBlocks(src, cond) {
-  const out = []; cons// Run after `next build`: asserts the emitted CSS contains the Tailwind utilities the layout depends on.
-// If Tailwind's source detection failed (for example on a path with spaces or brackets), the page would ship unstyled; this fails the build instead.
-import fs from "node:fs";
-import path from "node:path";
-
-const dir = path.join(".next", "static");
-const files = [];
-(function walk(d) { for (const e of fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }) : []) { const p = path.join(d, e.name); e.isDirectory() ? walk(p) : p.endsWith(".css") && files.push(p); } })(dir);
-if (!files.length) { console.error(`check-css: no CSS found under ${dir}. Run "npm run build" first.`); process.exit(1); }
-const css = files.map((f) => fs.readFileSync(f, "utf8")).join("\n");
-// Utilities used by app/layout.tsx and the shell. A responsive variant is included on purpose: it is emitted as an @media block.
-const NEED = [[".min-h-dvh", /\.min-h-dvh\b/], [".sr-only", /\.sr-only\b/], [".grid", /\.grid\{|\.grid,|\.grid\s*\{/], [".flex", /\.flex\{|\.flex,|\.flex\s*\{/], [".hidden", /\.hidden\{|\.hidden,|\.hidden\s*\{/], ["a responsive variant (md:)", /\.md\\:flex-row|\.md\\:w-14|\.md\\:hidden/], [".bg-accent", /\.bg-accent\b/]];
-// Responsive rules must be real @media blocks, not just class names: the page showed the mobile layout at 1920 px when they were not applied.
-/** Returns the text of every @media block whose condition matches `cond`, with nested braces balanced. */
-function mediaBlocks(src, cond) {
-  const out = []; const re = /@media([^{]*)\{/g; let m;
-  while ((m = re.exec(src))) {
-    if (!cond.test(m[1])) continue;
-    let depth = 1, i = re.lastIndex; while (i < src.length && depth) { const c = src[i++]; if (c === "{") depth++; else if (c === "}") depth--; }
-    out.push(src.slice(re.lastIndex, i - 1));
+function walk(directory) {
+  for (const entry of fs.existsSync(directory) ? fs.readdirSync(directory, { withFileTypes: true }) : []) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) walk(file);
+    else if (file.endsWith(".css")) files.push(file);
   }
-  return out;
 }
-const MD = /min-width:\s*(48rem|768px)|width\s*>=\s*(48rem|768px)/;
-const DOCK = /min-width:\s*(1360px|85rem)|width\s*>=\s*(1360px|85rem)/;
-const WIDE = /min-width:\s*(1700px|106\.25rem)|width\s*>=\s*(1700px|106\.25rem)/;
-const inBlock = (cond, re) => mediaBlocks(css, cond).some((b) => re.test(b));
-NEED.push(
-  ["the plain-CSS skeleton: @media (min-width:768px) block with .rail{width:56px}", () => inBlock(MD, /\.rail\{[^}]*width:56px/)],
-  ["the skeleton's list pane widths at 768, 1024 and 1360 px", () => inBlock(MD, /\.pane-list\{[^}]*width:300px/) && inBlock(/min-width:\s*1024px/, /\.pane-list\{[^}]*width:320px/) && inBlock(DOCK, /\.pane-list\{[^}]*width:380px/)],
-  ["the docked evidence rail grid inside @media (min-width:1360px)", () => inBlock(DOCK, /\.detail-grid\{[^}]*grid-template-columns/) && inBlock(DOCK, /\.evidence-dock\{[^}]*sticky/)],
-  ["the wide layout cap inside @media (min-width:1700px)", () => inBlock(WIDE, /\.shell\{[^}]*max-width:1600px/)],
-  ["phone: one pane at a time (data-pane) inside @media (max-width:767.98px)", () => inBlock(/max-width:\s*767\.98px/, /data-pane=.?detail.?\]>\.pane-list[^}]*display:none/) && inBlock(/max-width:\s*767\.98px/, /data-pane=.?list.?\]>\.pane-detail[^}]*display:none/)],
-  ["an md: utility inside a (min-width:768px) block (utilities use px breakpoints)", () => inBlock(MD, /\.md\\:/)],
-  ["every min-width media query is in px (a rem breakpoint moves with the browser font size)", () => !/@media\s*\([^)]*min-width:\s*[0-9.]+rem/.test(css) && !/@media\s*\(width\s*>=\s*[0-9.]+rem/.test(css)],
-  ["thin scrollbars without arrow buttons (pseudo-elements for Chromium/WebKit, standard properties only where they are unsupported)", () => /@supports not selector\(::-webkit-scrollbar\)\s*\{\s*\*\s*\{[^}]*scrollbar-width:\s*thin/.test(css) && /::-webkit-scrollbar-button\{[^}]*display:none/.test(css) && !/(^|\})\*\{[^}]*scrollbar-width/.test(css)],
-);
-const missing = NEED.filter(([, re]) => (typeof re === "function" ? !re() : !re.test(css))).map(([n]) => n);
+walk(dir);
 
+if (!files.length) {
+  console.error(`check-css: no CSS found under ${dir}. Run "npm run build" first.`);
+  process.exit(1);
+}
+
+const css = files.map((file) => fs.readFileSync(file, "utf8")).join("\n");
+function mediaBlocks(source, condition) {
+  const blocks = [];
+  const mediaQuery = /@media([^{]*)\{/g;
+  let match;
+  while ((match = mediaQuery.exec(source))) {
+    if (!condition.test(match[1])) continue;
+    let depth = 1;
+    let index = mediaQuery.lastIndex;
+    while (index < source.length && depth) {
+      const character = source[index++];
+      if (character === "{") depth++;
+      else if (character === "}") depth--;
+    }
+    blocks.push(source.slice(mediaQuery.lastIndex, index - 1));
+  }
+  return blocks;
+}
+
+const md = /min-width:\s*(48rem|768px)|width\s*>=\s*(48rem|768px)/;
+const dock = /min-width:\s*(1360px|85rem)|width\s*>=\s*(1360px|85rem)/;
+const wide = /min-width:\s*(1700px|106\.25rem)|width\s*>=\s*(1700px|106\.25rem)/;
+const inBlock = (condition, rule) => mediaBlocks(css, condition).some((block) => rule.test(block));
+const required = [
+  [".min-h-dvh", /\.min-h-dvh\b/],
+  [".sr-only", /\.sr-only\b/],
+  [".grid", /\.grid\{|\.grid,|\.grid\s*\{/],
+  [".flex", /\.flex\{|\.flex,|\.flex\s*\{/],
+  [".hidden", /\.hidden\{|\.hidden,|\.hidden\s*\{/],
+  [".bg-accent", /\.bg-accent\b/],
+  ["the desktop responsive utility", () => inBlock(md, /\.md\\:hidden/)],
+  ["the mobile max-md utility", () => mediaBlocks(css, /not all and \(min-width:\s*(48rem|768px)\)|max-width:\s*(47\.99\d*rem|767\.99\d*px)|width\s*<\s*(48rem|768px)/).some((block) => /\.max-md\\:hidden/.test(block))],
+  ["the 56px desktop navigation rail", () => inBlock(md, /\.rail\{[^}]*width:56px/)],
+  ["the list pane widths at 768px, 1024px and 1360px", () => inBlock(md, /\.pane-list\{[^}]*width:300px/) && inBlock(/min-width:\s*1024px/, /\.pane-list\{[^}]*width:320px/) && inBlock(dock, /\.pane-list\{[^}]*width:380px/)],
+  ["the docked evidence rail at 1360px", () => inBlock(dock, /\.detail-grid\{[^}]*grid-template-columns/) && inBlock(dock, /\.evidence-dock\{[^}]*sticky/)],
+  ["the wide layout cap at 1700px", () => inBlock(wide, /\.shell\{[^}]*max-width:1600px/)],
+  ["the mobile single-pane rules", () => inBlock(/max-width:\s*767\.98px/, /data-pane=.?detail.?\]>\.pane-list[^}]*display:none/) && inBlock(/max-width:\s*767\.98px/, /data-pane=.?list.?\]>\.pane-detail[^}]*display:none/)],
+  ["pixel-based min-width breakpoints", () => !/@media\s*\([^)]*min-width:\s*[0-9.]+rem/.test(css) && !/@media\s*\(width\s*>=\s*[0-9.]+rem/.test(css)],
+  ["thin scrollbars without arrow buttons", () => /@supports not selector\(::-webkit-scrollbar\)\s*\{\s*\*\s*\{[^}]*scrollbar-width:\s*thin/.test(css) && /::-webkit-scrollbar-button\{[^}]*display:none/.test(css) && !/(^|\})\*\{[^}]*scrollbar-width/.test(css)],
+];
+
+const missing = required.filter(([, check]) => (typeof check === "function" ? !check() : !check.test(css))).map(([name]) => name);
 if (missing.length) {
   console.error(`check-css: FAILED. The built CSS (${files.length} file(s), ${css.length} bytes) is missing: ${missing.join(", ")}.\nTailwind generated no utilities: move the project to a short path without spaces or brackets (for example C:\\dev\\tenant-copilot), delete .next and rebuild.`);
   process.exit(1);
 }
-console.log(`check-css: ok (${NEED.length} utilities present in ${files.length} CSS file(s), ${css.length} bytes)`);
-t re = /@media([^{]*)\{/g; let m;
-  while ((m = re.exec(src))) {
-    if (!cond.test(m[1])) continue;
-    let depth = 1, i = re.lastIndex; while (i < src.length && depth) { const c = src[i++]; if (c === "{") depth++; else if (c === "}") depth--; }
-    out.push(src.slice(re.lastIndex, i - 1));
-  }
-  return out;
-}
-const MD = /min-width:\s*(48rem|768px)|width\s*>=\s*(48rem|768px)/;
-const DOCK = /min-width:\s*(1360px|85rem)|width\s*>=\s*(1360px|85rem)/;
-const WIDE = /min-width:\s*(1700px|106\.25rem)|width\s*>=\s*(1700px|106\.25rem)/;
-const inBlock = (cond, re) => mediaBlocks(css, cond).some((b) => re.test(b));
-NEED.push(
-  ["an @media (min-width: 48rem) block containing md:flex-row", () => inBlock(MD, /\.md\\:flex-row/)],
-  ["an @media (min-width: 48rem) block containing md:hidden", () => inBlock(MD, /\.md\\:hidden/)],
-  ["a max-md:hidden rule inside a `not all and (min-width: 48rem)` media block", () => mediaBlocks(css, /not all and \(min-width:\s*(48rem|768px)\)|max-width:\s*(47\.99\d*rem|767\.99\d*px)|width\s*<\s*(48rem|768px)/).some((b) => /\.max-md\\:hidden/.test(b))],
-  ["an @media (min-width: 1360px) block (docked evidence rail)", () => inBlock(DOCK, /min-\\\[1360px\\\]\\:/)],
-);
-const missing = NEED.filter(([, re]) => (typeof re === "function" ? !re() : !re.test(css))).map(([n]) => n);
 
-if (missing.length) {
-  console.error(`check-css: FAILED. The built CSS (${files.length} file(s), ${css.length} bytes) is missing: ${missing.join(", ")}.\nTailwind generated no utilities: move the project to a short path without spaces or brackets (for example C:\\dev\\tenant-copilot), delete .next and rebuild.`);
-  process.exit(1);
-}
-console.log(`check-css: ok (${NEED.length} utilities present in ${files.length} CSS file(s), ${css.length} bytes)`);
+console.log(`check-css: ok (${required.length} checks passed in ${files.length} CSS file(s), ${css.length} bytes)`);
