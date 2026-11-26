@@ -20,7 +20,9 @@ const config: NextConfig = {
       source: "/_next/static/:path*",
       headers: [
         { key: "X-Content-Type-Options", value: "nosniff" },
-        { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ...(process.env.NODE_ENV === "production"
+          ? [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }]
+          : []),
       ],
     }];
   },
