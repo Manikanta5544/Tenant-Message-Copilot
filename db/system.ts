@@ -5,7 +5,7 @@ import { getEnv } from "@/core/env";
 import { llmLimiter, rateHeadroom } from "@/core/limiter";
 import { caps } from "@/app/server/sse";
 import { budgetState } from "./budget";
-import { POOL_MAX, appUrl, poolWaitStats, withScope } from "./client";
+import { poolMax, appUrl, poolWaitStats, withScope } from "./client";
 import { DEMO_ORG_ID } from "./ids";
 
 export interface SystemStats {
@@ -52,7 +52,7 @@ export async function systemStats(): Promise<SystemStats> {
       rate_headroom: h ? { remaining_requests: h.remaining_requests, remaining_tokens: h.remaining_tokens, limit_tokens: h.limit_tokens, reset_tokens: h.reset_tokens, seen_s_ago: Math.round((Date.now() - h.at) / 1000) } : null,
     },
     budget: { day: budgetDay(), cap_micro_usd: dailyBudgetMicroUsd(), used_micro_usd: b.reserved + b.spent, remaining_micro_usd: b.remaining, runs_used: b.runs_used, runs_cap: maxRunsPerDay() },
-    pool: (() => { const w = poolWaitStats(); return { max: POOL_MAX, wait_p50_ms: Math.round(w.p50_ms), wait_p95_ms: Math.round(w.p95_ms), wait_max_ms: Math.round(w.max_ms) }; })(),
+    pool: (() => { const w = poolWaitStats(); return { max: poolMax(), wait_p50_ms: Math.round(w.p50_ms), wait_p95_ms: Math.round(w.p95_ms), wait_max_ms: Math.round(w.max_ms) }; })(),
     limits: { rate_limited_1h: countEvents("rate_limited", 3_600_000), stream_cap_1h: countEvents("stream_cap", 3_600_000), streams_open: caps.open },
   };
 }

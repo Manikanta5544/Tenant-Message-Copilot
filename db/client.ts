@@ -24,7 +24,8 @@ type ClientLike = Queryable & { release(err?: boolean | Error): void };
 
 /** Small on purpose: a serverless or pooled Postgres has few connections to give, and every query here is a short indexed lookup (see docs/PERF.md).
  *  Idle clients are released after 10 s so a quiet instance holds none; a statement that runs over 8 s is cancelled by the server. */
-export const POOL_MAX = 3, IDLE_MS = 10_000, STATEMENT_MS = 8_000;
+export const poolMax = () => getEnv().DB_POOL_MAX;
+export const IDLE_MS = 10_000, STATEMENT_MS = 8_000;
 const waits: number[] = [];
 /** How long callers waited for a pooled connection (last 500), for /system and the load test. */
 export function poolWaitStats() {
@@ -40,12 +41,12 @@ async function makePool(url: string): Promise<PoolLike> {
     const neon = await import("@neondatabase/serverless");
     const ws = (await import("ws")).default;
     neon.neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket;
-    const np = new neon.Pool({ connectionString: url, max: POOL_MAX, idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, connectionTimeoutMillis: 5000 });
+    const np = new neon.Pool({ connectionString: url, max: poolMax(), idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, connectionTimeoutMillis: 5000 });
     np.on("error", (err: Error) => console.error("[db] idle client error", err.name));
     return np as unknown as PoolLike;
   }
   // Fail fast when the host is unreachable (default is to wait forever).
-  const pool = new pg.Pool({ connectionString: url, max: POOL_MAX, idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, connectionTimeoutMillis: 5000 });
+  const pool = new pg.Pool({ connectionString: url, max: poolMax(), idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, connectionTimeoutMillis: 5000 });
   // An idle client can error (server restart, Neon scale-to-zero). Unhandled, that event would crash the function instance.
   pool.on("error", (err) => console.error("[db] idle client error", err.name));
   return pool as unknown as PoolLike;
@@ -100,16 +101,20 @@ export function ensureSchema(url: string): Promise<void> {
 export const resetSchemaGuards = () => guards.clear();
 
 /** Runs fn in one transaction with the scope set as its first statement. Always rolls back on error. */
+/** A quoted SQL string literal for the scope values (our own ids and view names). Refuses backslashes and NUL instead of trying to escape them. */
+export function sqlLiteral(v: string): string {
+  if (/[\\\0]/.test(v)) throw new Error("scope value contains a character that cannot be quoted safely");
+  return `'${v.replace(/'/g, "''")}'`;
+}
+
 export async function withScope<T>(url: string, scope: Scope, fn: (db: Queryable) => Promise<T>): Promise<T> {
   await ensureSchema(url);
   const client = await connectClient(url);
   let broken = false;
   try {
-    await client.query("BEGIN");
-    await client.query(
-      "SELECT set_config('app.org_id', $1, true), set_config('app.resident_id', $2, true), set_config('app.view', $3, true)",
-      [scope.orgId ?? "", scope.residentId ?? "", scope.view ?? ""],
-    );
+    // BEGIN and the scope settings travel in ONE round trip (simple-query protocol, values escaped by the driver): one fewer network hop on every request.
+    const lit = (v: string | null | undefined) => sqlLiteral(v ?? "");
+    await client.query(`BEGIN; SELECT set_config('app.org_id', ${lit(scope.orgId)}, true), set_config('app.resident_id', ${lit(scope.residentId)}, true), set_config('app.view', ${lit(scope.view)}, true)`);
     const out = await fn(client);
     await client.query("COMMIT");
     return out;

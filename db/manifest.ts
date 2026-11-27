@@ -9,4 +9,5 @@ export const MIGRATIONS = [
   "0007_review_actions.sql",
   "0008_visitor_run_selection.sql",
   "0009_single_flight.sql",
+  "0010_run_net_hash.sql",
 ] as const;

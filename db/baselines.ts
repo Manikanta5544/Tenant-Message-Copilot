@@ -3,6 +3,7 @@
 import type { LLMProvider } from "@/core/provider";
 import { randomUUID } from "node:crypto";
 import { appUrl, withScope } from "./client";
+import { clearInboxCache } from "./inbox-cache";
 import { DEMO_ORG_ID } from "./ids";
 import { startRun } from "./runs";
 import { TEMPLATE_VERSION } from "@/core/facts";
@@ -49,6 +50,7 @@ export async function seedBaselines(provider: LLMProvider, log: (s: string) => v
       log(`FAILED ${m.label}: ${failed.at(-1)!.reason}`);
     }
   }
+  clearInboxCache();
   return { created, kept, failed };
 }
 
