@@ -4,7 +4,7 @@ Everything here was measured in this build environment: **2 vCPUs shared by the 
 
 ## Front end (`npm run perf`, production build, Chromium 1280x800, 5 cold loads, median)
 
-| metric | zip 6 | now | budget |
+| metric | zip  | now | budget |
 |---|---|---|---|
 | JS on first load (gzip) | 160 KB | **162 KB** (the visitor-cookie and 429 reset-time code) | ≤ 170 |
 | LCP | 92 ms | **92 to 124 ms** across three runs | ≤ 1500 |
@@ -15,13 +15,13 @@ Everything here was measured in this build environment: **2 vCPUs shared by the 
 
 Rendering changes in this round: inbox rows and the evidence rail are `memo`ised; the search input stays instant while filtering uses `useDeferredValue`; off-screen inbox rows use `content-visibility: auto`; the only transition left is opacity (`.t`), and animations are opacity or transform. The first version of `content-visibility` used a 64 px placeholder and **raised CLS to 0.011** (rows measure 64 to 129 px, median 88); with `contain-intrinsic-size: auto 88px` CLS is back to 0.003. Without the rule CLS was 0.002, so the rule costs 0.001 and saves layout work for off-screen rows; with 19 rows the saving is not visible in these numbers.
 
-Bundle: no further route-splitting was done this round. The command palette, trace table, detail view, audit export and batch runner already load on demand (see zip 6); the remaining first-load JS is the framework, the inbox and the shell. No extra split was found that would cut first-paint code without moving the selection-to-draft time past its budget.
+Bundle: no further route-splitting was done this round. The command palette, trace table, detail view, audit export and batch runner already load on demand; the remaining first-load JS is the framework, the inbox and the shell. No extra split was found that would cut first-paint code without moving the selection-to-draft time past its budget.
 
 ## Load (`npm run load -- 50`, 50 simultaneous visitors with distinct addresses)
 
 Production build, live mode against an unreachable provider (so create-run exercises the honest fallback), `TRUST_PROXY=1`, 2 vCPUs shared by the load generator, Node and Postgres:
 
-| operation | n | p50 ms | p95 ms | p99 ms | budget p95 ms | zip 6 p95 | result |
+| operation | n | p50 ms | p95 ms | p99 ms | budget p95 ms | p95 | result |
 |---|---|---|---|---|---|---|---|
 | inbox (GET /api/inbox) | 50 | 341 | 422 | 430 | 120 | 405 | **not met** |
 | stored run (GET /api/runs/:id) | 50 | 273 | 313 | 443 | 80 | 265 | **not met** |
@@ -29,7 +29,7 @@ Production build, live mode against an unreachable provider (so create-run exerc
 | create run (POST /api/runs) | 50 | 335 | 382 | 390 | 150 | 340 | **not met** |
 | stream: first event | 50 | 201 | 347 | 377 | 300 | 368 | **not met** |
 
-**0 responses with status 5xx, 0 client errors, 0 rate-limit rejections** (250 responses: 200 x150, 202 x50, 304 x50). Pool wait on the server: p50 0 ms, p95 13 ms (zip 6: 618 ms), max 54 ms, pool size 3. RSS 176 to 203 MB.
+**0 responses with status 5xx, 0 client errors, 0 rate-limit rejections** (250 responses: 200 x150, 202 x50, 304 x50). Pool wait on the server: p50 0 ms, p95 13 ms, max 54 ms, pool size 3. RSS 176 to 203 MB.
 
 The latency budgets are **not met**, and this round did not change that. One visitor alone gets each of these in about 5 ms, and the pool is no longer the wait (13 ms p95), so the time is 50 requests queueing for one Node thread on two shared CPUs: about 6 ms of CPU per request, serial. A budget of 120 ms p95 at 50-way concurrency needs about 2 ms per request or more than one process. I did not find a cheaper request that preserves the response bodies and the ETag, and I did not add a response cache because it would change what a visitor sees after their own action. On a host with spare cores and two or more instances the same code should do much better; that is **not verified** here.
 
@@ -189,3 +189,36 @@ Evidence reads are started while triage runs (see DECISIONS 67). Gain is the evi
 ## What was not measured here
 
 Live Groq under load, retry rate before/after the prompt fix on live traffic, Neon pooled behaviour, real network latency. See the final report for the commands.
+
+
+## load after the latency work (production build, 2 vCPU shared with the load generator and Postgres)
+
+Changes measured here: `/api/*` skips the nonce/cookie work in the proxy, `set_config` and the query go in one round trip, the run GET answers 304 from a cheap version token before building a body, the inbox has a per-visitor cache (TTL 1.5 s, cleared on every write by this process), and the pool is 10 (`DB_POOL_MAX`). Command: `BASE_URL=http://localhost:3100 npm run load -- N`, one run each, single Node process.
+
+| operation (p95 ms) | budget | zip 7 @50 | zip 9 @10 | zip 9 @25 | zip 9 @50 | zip 9 @50, 2 workers |
+|---|---|---|---|---|---|---|
+| inbox | 120 | 422 | 103 (pass) | 189 | 395 | 450 |
+| stored run | 80 | 313 | 120 | 231 | 380 | 441 |
+| 304 revalidation | 30 | 320 | 35 | 86 | 185 | 162 |
+| create run | 150 | 382 | 158 | 228 | 328 | 386 |
+| stream first event | 300 | 347 | 49 (pass) | 182 (pass) | 281 (pass) | 223 (pass) |
+
+0 responses with 5xx and 0 client errors at every level; pool wait p95 60 ms at 50 (max 92 ms). A single visitor meets every budget (inbox 6 ms, run 17 ms, 304 5 ms, create 40 ms, first event 22 ms).
+
+**Not met:** the inbox, stored run, 304 and create budgets are still missed at 25 and 50 simultaneous visitors, and 304 and create at 10. The only budget that moved from fail to pass at 50 is the stream first event. The machine has 2 cores shared by the load generator, Postgres and the server, so the server is CPU-bound; running two workers (`npm run start:cluster`, `WEB_CONCURRENCY=2`) gave no improvement here because there are no spare cores. The budgets were set for at least 4 cores and were not changed. Re-measure on such a host with `npm run load -- 50`; nothing here shows they pass there.
+
+### Final verification run (fresh directory, fresh `npm ci`, production build, 2 vCPU shared)
+
+p50 / p95 / p99 in ms, one run per level, single Node process, `BASE_URL` = the server started by `scripts/with-server.mjs`.
+
+| operation | budget p95 | 1 visitor | 10 | 25 | 50 |
+|---|---|---|---|---|---|
+| inbox | 120 | 6 / 6 / 6 pass | 56 / 115 / 115 pass | 151 / 237 / 245 **fail** | 188 / 316 / 335 **fail** |
+| stored run | 80 | 16 / 16 / 16 pass | 74 / 88 / 88 **fail** | 198 / 241 / 280 **fail** | 278 / 345 / 368 **fail** |
+| 304 | 30 | 6 / 6 / 6 pass | 26 / 57 / 57 **fail** | 72 / 87 / 89 **fail** | 120 / 150 / 154 **fail** |
+| create run | 150 | 42 / 42 / 42 pass | 115 / 133 / 133 pass | 175 / 191 / 203 **fail** | 224 / 314 / 339 **fail** |
+| stream first event | 300 | 25 / 25 / 25 pass | 45 / 57 / 57 pass | 110 / 145 / 146 pass | 235 / 263 / 269 pass |
+
+0 responses with 5xx and 0 client errors at every level; pool wait p95 at most 6 ms. Front end (`npm run perf`, after `npm run seed`): JS 162 KB gzip, LCP 112 ms, CLS 0.003, TBT 0, selection to draft 82 ms, search 26 ms; all pass. `perf` needs baselines: without them the setup banner appears after load and CLS reads 0.025 (this happened once when the test suite had cleared a baseline, and is why the verification script seeds before `perf`).
+
+Run-to-run variance is large on this machine (the stream first event at 50 visitors was 281, 315 and 263 ms in three runs), so a budget that passes by a small margin here is not evidence either way. **The 25 and 50 visitor budgets are not met on this hardware, and the 10-visitor run misses two.** Meeting them needs a host with at least 4 free cores for the server alone (not measured here).
