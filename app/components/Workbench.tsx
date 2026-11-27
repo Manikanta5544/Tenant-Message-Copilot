@@ -1,6 +1,7 @@
 "use client";
 import { resetNote } from "../lib/reset-time";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { setInboxSnapshot } from "../lib/inbox-snapshot";
 import type { InboxRow, ReviewRow } from "../lib/types";
 import type { RunState } from "../lib/run-state";
 import Composer, { type Resident } from "./Composer";
@@ -46,7 +47,8 @@ export default function Workbench() {
     try {
       const r = await fetch("/api/inbox");
       if (!r.ok) { setLoadErr(await readProblem(r, "The inbox could not be loaded.")); return; }
-      setInbox(await r.json()); setLoadErr(null);
+      const j = await r.json(); setInbox(j); setLoadErr(null);
+      if (Array.isArray(j?.messages)) setInboxSnapshot(j.messages);
     } catch { setLoadErr(networkProblem("The inbox could not be loaded. Check your connection, then try again.")); }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);

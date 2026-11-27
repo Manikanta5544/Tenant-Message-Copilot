@@ -19,7 +19,10 @@ export async function featureChecks({ browser, BASE, check }) {
   check((await dlg.getByRole("option").first().innerText()).includes("Evals"), "typing filters the results");
   await page.keyboard.press("Escape");
   check(!(await dlg.isVisible()), "Esc closes the palette");
-  await page.keyboard.press("Control+k"); await page.keyboard.type("scenario 2"); await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+k"); await page.keyboard.type("scenario 2");
+  // Enter acts on the first result, so wait until a message result is listed (the inbox may still be loading on a slow database).
+  await page.locator('#palette-list [role="option"]:has-text("Message")').first().waitFor({ timeout: 20000 }).catch(() => {});
+  await page.keyboard.press("Enter");
   await page.waitForURL(/\?m=/, { timeout: 20000 }).catch(() => {}); // generous: the search runs against the database
   check(/[?&]m=[0-9a-f-]{36}/.test(page.url()), "Enter on a message result opens it at /?m=<id>");
   const withM = page.url();

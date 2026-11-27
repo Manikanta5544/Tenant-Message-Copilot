@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { getInboxSnapshot, setInboxSnapshot } from "../lib/inbox-snapshot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isPaletteKey, rank, type Command } from "../lib/palette";
 import type { InboxRow } from "../lib/types";
@@ -13,7 +14,7 @@ export default function CommandPalette({ startOpen = false }: { startOpen?: bool
   const [open, setOpen] = useState(startOpen);
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
-  const [rows, setRows] = useState<InboxRow[]>([]);
+  const [rows, setRows] = useState<InboxRow[]>(() => getInboxSnapshot());
   const input = useRef<HTMLInputElement>(null);
   const before = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
 
@@ -28,7 +29,7 @@ export default function CommandPalette({ startOpen = false }: { startOpen?: bool
     if (!open) return;
     input.current?.focus();
     let live = true;
-    fetch("/api/inbox").then((r) => (r.ok ? r.json() : null)).then((j: { messages?: InboxRow[] } | null) => { if (live && j?.messages) setRows(j.messages); }).catch(() => {});
+    fetch("/api/inbox").then((r) => (r.ok ? r.json() : null)).then((j: { messages?: InboxRow[] } | null) => { if (live && j?.messages) { setRows(j.messages); setInboxSnapshot(j.messages); } }).catch(() => {});
     return () => { live = false; };
   }, [open]);
 
