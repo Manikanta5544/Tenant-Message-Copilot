@@ -4,7 +4,7 @@ import { z } from "zod";
 import { HttpError } from "@/db/runs";
 import { randomUUID } from "node:crypto";
 import { trustedClientIp, readVisitorId } from "@/core/visitor";
-import { EnvError, getEnv, trustsProxy, type Env } from "@/core/env";
+import { EnvError, getEnv, isProduction, trustsProxy, type Env } from "@/core/env";
 import { logError, redactSecrets, safeErrorMessage } from "@/core/log";
 import { ConfigMissingError, DbUnavailableError, asDbUnavailable } from "@/core/db-errors";
 import { SchemaOutOfDateError, SCHEMA_HINT, isSchemaDriftCode } from "@/core/schema-version";
@@ -30,10 +30,13 @@ export function fail(e: unknown, req?: Request): Response {
   e = asDbUnavailable(e);
   if (e instanceof ConfigMissingError) {
     console.error(JSON.stringify({ level: "error", msg: "configuration missing", correlation_id: ref, missing: e.missing }));
-    return Response.json({ error: "The service is not configured.", code: "config_missing", hint: e.hint, missing: e.missing, correlation_id: ref }, { status: 503 });
+    // Setup details (variable names, the fix) are for the developer's own machine; a production visitor gets neither.
+    return Response.json({ error: "The service is not configured.", code: "config_missing", ...(isProduction() ? {} : { hint: e.hint, missing: e.missing }), correlation_id: ref }, { status: 503 });
   }
   if (e instanceof DbUnavailableError) {
-    return Response.json({ error: "The database is not available.", code: e.code, hint: e.hint, host: e.host, port: e.port, correlation_id: ref }, { status: 503 });
+    // Host and port go to the server log only, with the reference id; in production the body carries neither them nor the setup hint.
+    console.error(JSON.stringify({ level: "error", msg: "database unavailable", code: e.code, host: e.host, port: e.port, correlation_id: ref }));
+    return Response.json({ error: "The database is not available.", code: e.code, ...(isProduction() ? {} : { hint: e.hint, host: e.host, port: e.port }), correlation_id: ref }, { status: 503 });
   }
   if (e instanceof SchemaOutOfDateError || isSchemaDriftCode(pgCode)) {
     // A stale schema is an operator problem with a known fix: say so, in every environment, with a 503.
@@ -69,20 +72,27 @@ export async function readJson<T>(req: Request, schema: z.ZodType<T>): Promise<T
  * address nor a valid cookie shares one "untrusted" bucket, so rotating headers or sending no cookie never mints identities.
  * The App Router exposes no socket address on Request. Documented in docs/RUNBOOK.md.
  */
-export function clientKey(req: Request, env: Pick<Env, "VERCEL" | "TRUST_PROXY"> & Partial<Pick<Env, "TRUSTED_PROXY_HOPS" | "VISITOR_SALT">> = getEnv()) {
-  if (trustsProxy(env)) {
-    const ip = trustedClientIp(req.headers, env.TRUSTED_PROXY_HOPS ?? 1, env.VERCEL === "1");
-    if (ip) return { ip };
-  }
+export function clientKey(req: Request, env: Pick<Env, "VERCEL" | "TRUST_PROXY"> & Partial<Pick<Env, "TRUSTED_PROXY_HOPS" | "VISITOR_SALT">> = getEnv()): { ip: string; net: string | null } {
   const id = readVisitorId(req.headers.get("cookie"), env.VISITOR_SALT ?? "demo");
-  return { ip: id ? `c:${id}` : "untrusted" };
+  if (trustsProxy(env)) {
+    const addr = trustedClientIp(req.headers, env.TRUSTED_PROXY_HOPS ?? 1, env.VERCEL === "1");
+    // `ip` is the visitor identity (their own cookie when they keep one, else their address); `net` is the address itself, used for
+    // ceilings that a client cannot dodge by discarding cookies.
+    if (addr) return { ip: id ? `c:${id}` : addr, net: addr };
+  }
+  return { ip: id ? `c:${id}` : "untrusted", net: null };
 }
 
 /** JSON with a weak ETag over the body, and a bodiless 304 when the caller already holds it (If-None-Match).
  *  `private, no-cache` means the browser must ask every time, so data is never stale; the 304 saves the transfer and the client's parse and render. */
-export function jsonWithEtag(req: Request, body: unknown, headers: Record<string, string> = {}): Response {
+/** True when the request's If-None-Match already names this version. */
+export const matchesEtag = (req: Request, etag: string): boolean => (req.headers.get("if-none-match") ?? "").split(",").some((t) => t.trim() === etag || t.trim() === "*");
+export const notModified = (etag: string, headers: Record<string, string> = {}): Response => new Response(null, { status: 304, headers: { ...headers, etag, "cache-control": "private, no-cache", vary: "cookie" } });
+
+/** `version` lets a route name the representation by a cheap token (see runVersion) so a 304 is answered before the body is built. */
+export function jsonWithEtag(req: Request, body: unknown, headers: Record<string, string> = {}, version?: string): Response {
   const text = JSON.stringify(body);
-  const etag = `W/"${createHash("sha1").update(text).digest("base64url").slice(0, 22)}"`;
+  const etag = version ? `W/"${createHash("sha1").update(version).digest("base64url").slice(0, 22)}"` : `W/"${createHash("sha1").update(text).digest("base64url").slice(0, 22)}"`;
   const h = { ...headers, etag, "cache-control": "private, no-cache", vary: "cookie" };
   const inm = req.headers.get("if-none-match");
   if (inm && inm.split(",").some((t) => t.trim() === etag || t.trim() === "*")) return new Response(null, { status: 304, headers: h });
