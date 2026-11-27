@@ -27,7 +27,7 @@ export default function EvalTable({ results }: { results: CaseResult[] }) {
     </th>
   );
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Golden cases">
       <table className="tbl" style={{ minWidth: 640 }}>
         <caption className="sr-only">Every golden case in the latest critical run. Sort by clicking a column heading.</caption>
         <thead><tr>{head("id", "Case")}{head("category", "Category")}<th scope="col">Route expected → actual</th>{head("severity", "Result")}{head("latency", "Latency", "r")}</tr></thead>
