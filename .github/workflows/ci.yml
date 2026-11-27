@@ -79,11 +79,12 @@ jobs:
           E2E_PRODUCTION: "1"
           E2E_FLOWS: "0"
         run: |
-          node scripts/with-server.mjs --port 3000 --wait /api/health --log server.log -- "npm run e2e 2>&1 | tee e2e.log && grep -q '^mode: production' e2e.log && npm run e2e:a11y"
+          # No pipe here: without `pipefail` a pipe would hide a failing e2e. E2E_PRODUCTION=1 makes the suite itself fail if the server is not a production build.
+          node scripts/with-server.mjs --port 3000 --wait api/health --log server.log -- "npm run e2e && npm run e2e:a11y"
       - name: "Upload server and e2e logs (on failure)"
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: verify-logs, path: "server.log\ne2e.log\ntest-results", if-no-files-found: ignore }
+        with: { name: verify-logs, path: "server.log\ntest-results", if-no-files-found: ignore }
 
   windows-layout:
     # The class of bug that showed the mobile layout at 1920 px on a developer's Windows machine: build on Windows, assert the emitted CSS
@@ -111,7 +112,7 @@ jobs:
       - name: "Install Chromium for Playwright"
         run: npx playwright install chromium
       - name: "Render the layout matrix against the production server (a Node script starts, waits for and stops the server, the same on every OS)"
-        run: node scripts/with-server.mjs --port 3000 --wait /api/health --log server.log -- "node e2e/layout.mjs"
+        run: node scripts/with-server.mjs --port 3000 --wait api/health --log server.log -- "node e2e/layout.mjs"
       - name: "Upload server log (on failure)"
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

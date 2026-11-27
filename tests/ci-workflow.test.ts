@@ -63,11 +63,14 @@ describe("ci.yml hardening", () => {
     expect(raw).not.toMatch(/nohup/);
     for (const l of raw.split("\n")) expect(l, l).not.toMatch(/\s&\s*$/);
   });
-  it("verify runs e2e in production mode, asserts the mode line, and runs the axe check", () => {
+  it("verify runs e2e in production mode (the suite asserts it) and the axe check, without a pipe that could hide a failure", () => {
     const run = w.jobs.verify!.steps.map((s) => s.run ?? "").join("\n");
     expect(raw).toContain('E2E_PRODUCTION: "1"');
-    expect(run).toContain("grep -q '^mode: production' e2e.log");
-    expect(run).toContain("npm run e2e:a11y");
+    expect(run).toContain("npm run e2e && npm run e2e:a11y");
+    expect(run).not.toMatch(/\|\s*tee\b/);
+  });
+  it("no argument that starts with / is passed to a script from a bash step: Git Bash on Windows rewrites it into a C:/Program Files/Git/... path", () => {
+    expect(raw).not.toMatch(/--wait\s+\//);
   });
   it("verify and windows-layout upload the server log on failure", () => {
     for (const j of ["verify", "windows-layout"]) {
