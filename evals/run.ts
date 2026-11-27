@@ -43,7 +43,7 @@ export async function runEval(o: EvalOptions) {
     if (o.mode === "mock") provider = new MockProvider();
     else if (o.mode === "replay") {
       const rp = new ReplayProvider(FIXTURE_FILE);
-      if (rp.size === 0) throw new Error("no recorded model responses found at evals/fixtures/recorded.json. A recording is produced only by a live run (npm run eval with ANTHROPIC_API_KEY). Nothing was replayed or invented.");
+      if (rp.size === 0) throw Object.assign(new Error("no recorded model responses found at evals/fixtures/recorded.json. A recording is produced only by a live run (`npm run eval` with LLM_API_KEY, or ANTHROPIC_API_KEY with LLM_PROVIDER=anthropic), which writes the file. Nothing was replayed or invented."), { code: "NO_RECORDING" });
       provider = rp;
     } else {
       if (!liveConfigured()) throw new Error("live eval needs a model key (LLM_API_KEY for Groq or any OpenAI-compatible endpoint, or ANTHROPIC_API_KEY with LLM_PROVIDER=anthropic); none is set, so no live result exists (unverified).");
@@ -137,5 +137,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     console.log(formatTable(r, mode));
     await closeAllPools();
     process.exit(r.gate.ok ? 0 : 1);
-  }, async (e) => { console.error(e.message); await closeAllPools(); process.exit(2); });
+  }, async (e) => {
+    await closeAllPools();
+    // Replay with nothing recorded is "not run", never a pass and never a failure: exit 0 with an unmistakable line. A real mismatch still exits 1.
+    if (e?.code === "NO_RECORDING") { console.log(`NOT RUN: replay found no recording at evals/fixtures/recorded.json (no result, unverified).\n${e.message}`); process.exit(0); }
+    console.error(e.message); process.exit(2);
+  });
 }

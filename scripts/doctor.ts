@@ -6,10 +6,12 @@ import path from "node:path";
 import { EnvError, parseEnv, rawEnv, type Env, type RawEnv } from "../core/env";
 import { ASSUMED_PRICES_DATE, modelAvailability, openAICompatFromEnv } from "../core/providers/openai-compat";
 import { MIGRATIONS } from "../db/manifest";
+import { s0Audit } from "./s0-audit";
 
-export interface CheckResult { name: string; ok: boolean; skipped?: boolean; detail: string; hint?: string }
+export interface CheckResult { name: string; ok: boolean; skipped?: boolean; warn?: boolean; detail: string; hint?: string }
 const ok = (name: string, detail: string): CheckResult => ({ name, ok: true, detail });
 const bad = (name: string, detail: string, hint: string): CheckResult => ({ name, ok: false, detail, hint });
+const warning = (name: string, detail: string, hint: string): CheckResult => ({ name, ok: true, warn: true, detail, hint });
 const skip = (name: string, detail: string): CheckResult => ({ name, ok: true, skipped: true, detail });
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e)).split("\n")[0]!.slice(0, 160);
 
@@ -19,7 +21,7 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
   try { return await fn(c); } finally { await c.end(); }
 }
 
-export async function doctor(raw: RawEnv = rawEnv(), o: { roundtrip?: boolean; fetch?: typeof fetch } = {}): Promise<CheckResult[]> {
+export async function doctor(raw: RawEnv = rawEnv(), o: { roundtrip?: boolean; fetch?: typeof fetch; deep?: boolean } = {}): Promise<CheckResult[]> {
   const out: CheckResult[] = [];
   let env: Env;
   try {
@@ -31,6 +33,10 @@ export async function doctor(raw: RawEnv = rawEnv(), o: { roundtrip?: boolean; f
     return out; // nothing else is meaningful with an invalid configuration
   }
 
+  // Without a trusted proxy the server cannot see client addresses, so per-visitor limits rest on a cookie the client can discard.
+  if (env.NODE_ENV === "production" && env.VERCEL !== "1" && !env.TRUST_PROXY) {
+    out.push(warning("rate-limit identity", "no trusted proxy: per-visitor limits are cookie-only and therefore advisory; there is no per-network ceiling", "Behind a proxy or load balancer set TRUST_PROXY=1 and TRUSTED_PROXY_HOPS (docs/RUNBOOK.md). The global daily cap and budget remain the hard stop."));
+  }
   const ownerUrl = env.DATABASE_URL_OWNER, appUrl = env.DATABASE_URL_APP;
   if (!ownerUrl) out.push(bad("database (owner role)", "DATABASE_URL_OWNER is not set", "Set the DIRECT (non-pooled) connection string; it is used by migrate and seed."));
   else try { await withClient(ownerUrl, (c) => c.query("SELECT 1")); out.push(ok("database (owner role)", "connected")); }
@@ -52,6 +58,13 @@ export async function doctor(raw: RawEnv = rawEnv(), o: { roundtrip?: boolean; f
     } catch (e) { out.push(bad("database (app role)", msg(e), /password|authentication|28P01/i.test(msg(e)) ? "Login as copilot_app failed. The role is created by `npm run migrate` with the password in APP_ROLE_PASSWORD, so DATABASE_URL_APP must use exactly that password. On Neon, DATABASE_URL_OWNER is the DIRECT url (host without -pooler) and DATABASE_URL_APP is the POOLED url (host with -pooler) with user copilot_app. Run `npm run migrate` again after changing APP_ROLE_PASSWORD." : "Check DATABASE_URL_APP (Neon: the pooled url, host with -pooler, user copilot_app) and that the database is reachable.")); }
   }
 
+  // The S0 audit reads completed runs whatever the provider mode, so it runs before the live-model checks (which return early otherwise).
+  if (o.deep && ownerUrl) {
+    try {
+      const a = await s0Audit(ownerUrl);
+      out.push(a.violations.length ? bad("S0 audit (deep)", `${a.violations.length} violation(s) in ${a.runs} completed run(s): ${a.violations[0]}`, "Run `npm run s0-audit` for the list. A draft must never carry a figure the ledger does not.") : ok("S0 audit (deep)", `${a.runs} completed run(s), 0 violations`));
+    } catch (e) { out.push(bad("S0 audit (deep)", msg(e), "The audit reads runs with the owner role; check DATABASE_URL_OWNER.")); }
+  }
   if (env.PROVIDER_MODE !== "live") {
     out.push(skip("model availability", `PROVIDER_MODE=${env.PROVIDER_MODE}: no live model in use`));
     out.push(skip("model round trip", `PROVIDER_MODE=${env.PROVIDER_MODE}`));
@@ -95,8 +108,8 @@ export async function doctor(raw: RawEnv = rawEnv(), o: { roundtrip?: boolean; f
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const res = await doctor(rawEnv(), { roundtrip: !process.argv.includes("--skip-roundtrip") });
-  for (const r of res) console.log(`${r.skipped ? "SKIP" : r.ok ? " OK " : "FAIL"}  ${r.name.padEnd(28)} ${r.detail}${r.ok ? "" : `\n      fix: ${r.hint}`}`);
+  const res = await doctor(rawEnv(), { roundtrip: !process.argv.includes("--skip-roundtrip"), deep: process.argv.includes("--deep") });
+  for (const r of res) console.log(`${r.skipped ? "SKIP" : r.warn ? "WARN" : r.ok ? " OK " : "FAIL"}  ${r.name.padEnd(28)} ${r.detail}${r.ok && !r.warn ? "" : `\n      ${r.warn ? "advice" : "fix"}: ${r.hint}`}`);
   const failed = res.filter((r) => !r.ok).length;
   const notLive = res.some((r) => r.name === "env schema" && r.ok && !/PROVIDER_MODE=live/.test(r.detail));
   if (notLive) console.log("\nNOTE: PROVIDER_MODE is not live. This is fine locally and in CI, but it is not a production configuration (decision D1).");

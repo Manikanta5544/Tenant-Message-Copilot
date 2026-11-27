@@ -7,7 +7,19 @@ const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const PAGES = (process.env.E2E_PAGES ?? "/,/evals,/about").split(",");
 const fails = [];
 const check = (ok, msg) => { console.log(`${ok ? "PASS" : "FAIL"}  ${msg}`); if (!ok) fails.push(msg); };
-const prod = process.env.E2E_PRODUCTION === "1";
+// The mode comes from the server, not from the caller: a development server's CSP allows 'unsafe-eval', a production one never does.
+// E2E_PRODUCTION=1 additionally asserts the server really is a production build, so CI cannot silently run the dev-mode checks (or skip the
+// production ones) against the wrong server.
+const skip = (what, why) => console.log(`SKIP  ${what} (${why})`);
+const probeCsp = (await fetch(BASE + "/")).headers.get("content-security-policy") ?? "";
+const detected = /unsafe-eval/.test(probeCsp) ? "development" : "production";
+const prod = detected === "production";
+console.log(`mode: ${detected} (detected from the server's CSP)`);
+if (process.env.E2E_PRODUCTION === "1" && !prod) { console.log("FAIL  E2E_PRODUCTION=1 but the server at " + BASE + " is a development server"); process.exit(1); }
+if (process.env.E2E_PRODUCTION === "0" && prod) { console.log("FAIL  E2E_PRODUCTION=0 but the server at " + BASE + " is a production build"); process.exit(1); }
+
+// A development server compiles each route on first request (can exceed the 30 s navigation timeout when cold): warm them up first.
+for (const path of PAGES) await fetch(BASE + path, { signal: AbortSignal.timeout(120_000) }).catch(() => {});
 
 const browser = await chromium.launch();
 for (const path of PAGES) {
@@ -27,7 +39,7 @@ for (const path of PAGES) {
   check(h["referrer-policy"] === "strict-origin-when-cross-origin", `${path}: Referrer-Policy`);
   check(/camera=\(\)/.test(h["permissions-policy"] ?? ""), `${path}: Permissions-Policy`);
   check(!h["x-powered-by"], `${path}: no X-Powered-By`);
-  if (prod) check(/max-age=\d+/.test(h["strict-transport-security"] ?? ""), `${path}: HSTS`);
+  if (prod) check(/max-age=\d+/.test(h["strict-transport-security"] ?? ""), `${path}: HSTS`); else skip(`${path}: HSTS`, "production only");
   check(prod ? !/unsafe-eval/.test(csp) : true, `${path}: ${prod ? "production CSP has no unsafe-eval" : "(dev) unsafe-eval allowed only outside production"}`);
   await page.waitForTimeout(800);
   const viol = await page.evaluate(() => window.__csp);
@@ -78,7 +90,8 @@ const labelLinks = (page) => page.evaluate(() => [...document.querySelectorAll('
   check((await labelLinks(page)) === 0 && (await page.evaluate(() => document.documentElement.dataset.layout)) === "desktop", "desktop layout under injection: rail icons only, data-layout=desktop");
   await page.waitForTimeout(1200);
   const notice = await page.locator("#ext-notice").count();
-  check(prod ? notice === 0 : notice === 1, prod ? "production never shows the dark-mode extension notice" : "development shows the dark-mode extension notice when data-darkreader-* is present");
+  if (prod) check(notice === 0, "production never shows the dark-mode extension notice");
+  else check(notice === 1, "development shows the dark-mode extension notice when data-darkreader-* is present");
   await ctx.close();
 }
 // The opt-out for Dark Reader must be a real <meta> element in the served HTML.
@@ -89,6 +102,7 @@ const labelLinks = (page) => page.evaluate(() => [...document.querySelectorAll('
 import { layoutMatrix } from "./layout.mjs";
 import { cssFaultCheck } from "./css-fault.mjs";
 import { featureChecks } from "./features.mjs";
+if (prod) skip("StyleProbe appears for a deliberately broken stylesheet", "dev only: the probe is not shipped in production");
 await cssFaultCheck({ browser, BASE, check, dev: !prod });
 if (process.env.E2E_FLOWS !== "0") await featureChecks({ browser, BASE, check });
 await layoutMatrix({ browser, BASE, check, tolerateApiErrors: process.env.E2E_FLOWS === "0" });
@@ -105,6 +119,7 @@ if (!prod) {
   check(!bad.some((t) => /script tag/i.test(t)), `no "Encountered a script tag" warning when the boundary renders${bad.length ? " " + JSON.stringify(bad.slice(0, 2)) : ""}`);
   await ctx.close();
 } else {
+  skip("error boundary renders with a reference id (/debug-error)", "dev only");
   const r = await fetch(BASE + "/debug-error"); const r2 = await fetch(BASE + "/setup");
   check(r.status === 404 && r2.status === 404, "/debug-error and /setup are 404 in production");
 }
