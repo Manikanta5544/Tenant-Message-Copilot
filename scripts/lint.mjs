@@ -15,7 +15,8 @@ const walk = (p) => {
   if (!fs.existsSync(p)) return;
   const st = fs.statSync(p);
   if (st.isDirectory()) { for (const e of fs.readdirSync(p)) walk(path.join(p, e)); }
-  else if (/\.(ts|tsx)$/.test(p)) files.push(p);
+  // Rules match on forward-slash paths; path.join() yields backslashes on Windows, which made every path-based exemption miss.
+  else if (/\.(ts|tsx)$/.test(p)) files.push(p.split(path.sep).join("/"));
 };
 ROOTS.forEach(walk);
 let bad = 0;

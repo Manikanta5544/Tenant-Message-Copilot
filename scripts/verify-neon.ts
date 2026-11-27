@@ -2,6 +2,8 @@
 // The test setup drops and rebuilds the schema on that database, so this refuses to run if the URLs point at the
 // application's own database. Exit code 0 = every isolation test passed against Neon.
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import path from "node:path";
 import { rawEnv } from "../core/env";
 
 const e = rawEnv();
@@ -13,6 +15,10 @@ if (host(owner!) === host(e.DATABASE_URL_OWNER ?? "") || host(app!) === host(e.D
 if (!/neon\.tech/.test(owner!)) console.warn("note: the owner URL does not look like a Neon host; running anyway.");
 
 console.log("Running RLS isolation, append-only review log and visitor-scope tests against the test branch...\n");
-const r = spawnSync("npx", ["vitest", "run", "tests/isolation.test.ts", "tests/visitor-and-review.test.ts", "tests/abuse.test.ts"], { stdio: "inherit", env: process.env });
+// Run vitest through the current Node binary. `npx` is `npx.cmd` on Windows and spawnSync without a shell cannot start it (ENOENT), which
+// used to surface as a bare "FAIL" with no output at all.
+const vitestBin = path.join(path.dirname(createRequire(import.meta.url).resolve("vitest/package.json")), "vitest.mjs");
+const r = spawnSync(process.execPath, [vitestBin, "run", "tests/isolation.test.ts", "tests/visitor-and-review.test.ts", "tests/abuse.test.ts"], { stdio: "inherit", env: process.env });
+if (r.error) console.error(`verify:neon: could not start vitest: ${r.error.message}`);
 console.log(r.status === 0 ? "\nverify:neon: PASS (isolation tests passed against the test database)" : "\nverify:neon: FAIL (see the output above)");
 process.exit(r.status ?? 1);

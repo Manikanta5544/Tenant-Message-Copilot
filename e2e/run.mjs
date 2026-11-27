@@ -131,11 +131,14 @@ if (process.env.E2E_FLOWS !== "0") {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   await page.goto(`${BASE}/?m=${target.message_id}`, { waitUntil: "networkidle" });
+  // Wait for each condition instead of reading the page at networkidle: with a remote database the stored run arrives after the network goes quiet.
+  await page.getByRole("heading", { name: /^(ready|needs review|escalate only)$/i }).first().waitFor({ timeout: 20000 }).catch(() => {});
   check(await page.getByRole("heading", { name: /^(ready|needs review|escalate only)$/i }).first().isVisible(), "/?m=<id> opens that message's status strip");
   check((await page.locator('[data-inbox-row][aria-current="true"]').count()) === 1, "the selected row is marked aria-current");
   const approve = page.getByRole("button", { name: /^approve$/i });
   if (await approve.count()) { await approve.click(); await page.getByText(/· recorded\./).first().waitFor(); }
   await page.reload({ waitUntil: "networkidle" });
+  await page.getByText(/Approved( with your edits)? by you, \d\d:\d\d · recorded\./).first().waitFor({ timeout: 20000 }).catch(() => {});
   check(await page.getByText(/Approved( with your edits)? by you, \d\d:\d\d · recorded\./).first().isVisible(), "review action persists across reload (recorded)");
   await page.goto(BASE + "/", { waitUntil: "networkidle" });
   await page.keyboard.press("j");
@@ -164,6 +167,7 @@ if (process.env.E2E_FLOWS !== "0") {
   check(!stepperSeen, "opening a stored run never shows the pipeline stepper or 'Loading the saved draft'");
   await page.waitForTimeout(500);
   const sum = page.getByTestId("verification-summary");
+  await sum.waitFor({ timeout: 20000 }).catch(() => {});
   check(await sum.count() === 1 && /checks passed|flagged/.test(await sum.innerText()), "status strip shows the verification summary");
   await sum.click(); await page.waitForTimeout(300);
   check(await page.getByRole("tab", { name: /Verification/ }).getAttribute("aria-selected") === "true", "the summary opens the Verification tab");

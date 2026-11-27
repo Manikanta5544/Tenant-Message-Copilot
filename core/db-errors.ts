@@ -36,7 +36,7 @@ export function hintFor(kind: DbErrorKind, host?: string, port?: number): string
     case "auth_failed": return "The app role cannot log in: run npm run migrate and check APP_ROLE_PASSWORD matches DATABASE_URL_APP. On Neon, DATABASE_URL_OWNER is the direct URL and DATABASE_URL_APP is the pooled URL of the copilot_app role.";
     case "database_missing": return `The database named in the URL does not exist on ${where(host, port)}. Create it (createdb copilot) or fix the database name in DATABASE_URL_*.`;
     case "pool_exhausted": return "The database has no free connections. Wait a moment and retry; on Neon use the pooled URL for DATABASE_URL_APP.";
-    case "tls": return "The TLS connection to the database failed. For Neon keep ?sslmode=require in the URL; for local Postgres remove sslmode.";
+    case "tls": return "The TLS connection to the database failed. For Neon use ?sslmode=verify-full in the URL (`require` works today but pg warns that its meaning changes in the next major version); for local Postgres remove sslmode.";
     default: return "The database connection failed. Run npm run doctor for details.";
   }
 }

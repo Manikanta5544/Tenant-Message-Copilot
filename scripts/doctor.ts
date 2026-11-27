@@ -27,6 +27,15 @@ export async function doctor(raw: RawEnv = rawEnv(), o: { roundtrip?: boolean; f
   try {
     env = parseEnv(raw);
     out.push(ok("env schema", `valid (NODE_ENV=${env.NODE_ENV}, PROVIDER_MODE=${env.PROVIDER_MODE})`));
+    // `next start` and `npm run e2e` run with NODE_ENV=production, which has stricter rules than development (for example a 32-character
+    // VISITOR_SALT). A configuration that passes here can still make every page render its error panel in production.
+    if (env.NODE_ENV !== "production") {
+      try { parseEnv({ ...raw, NODE_ENV: "production" }); out.push(ok("production configuration", "would be accepted by `next start`")); }
+      catch (e) {
+        const problems = e instanceof EnvError ? e.problems : [msg(e)];
+        out.push(warning("production configuration", `would be rejected by \`next start\`: ${problems.join("; ")}`, "Fix these in .env before `npm start`, the e2e suite, perf or any deployment."));
+      }
+    }
   } catch (e) {
     const problems = e instanceof EnvError ? e.problems : [msg(e)];
     out.push(bad("env schema", problems.join("; "), "Fix the listed variables in .env (see .env.example and docs/RUNBOOK.md), then re-run."));

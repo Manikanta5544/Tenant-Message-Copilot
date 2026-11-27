@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import net from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigMissingError, DbUnavailableError, asDbUnavailable, classifyDbError, hintFor } from "../core/db-errors";
@@ -173,7 +175,7 @@ describe("/setup", () => {
 
 describe("diagnostics", () => {
   it("names a .env.txt left by Windows Notepad and gives the rename command for both shells", () => {
-    const dir = fs.mkdtempSync("/tmp/diag-"); fs.writeFileSync(`${dir}/.env.txt`, "x"); fs.writeFileSync(`${dir}/.env.example`, "x");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "diag-")); fs.writeFileSync(`${dir}/.env.txt`, "x"); fs.writeFileSync(`${dir}/.env.example`, "x");
     const c = envFileCheck(dir);
     expect(c.status).toBe("fail");
     expect(c.detail).toMatch(/\.env\.txt.*Notepad/);
@@ -181,7 +183,7 @@ describe("diagnostics", () => {
     fs.rmSync(dir, { recursive: true });
   });
   it("a missing .env with only .env.example says to copy it", () => {
-    const dir = fs.mkdtempSync("/tmp/diag-"); fs.writeFileSync(`${dir}/.env.example`, "x");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "diag-")); fs.writeFileSync(`${dir}/.env.example`, "x");
     expect(envFileCheck(dir).fix!.powershell).toMatch(/Copy-Item \.env\.example \.env/);
     fs.rmSync(dir, { recursive: true });
   });

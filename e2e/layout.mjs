@@ -51,7 +51,9 @@ export async function layoutMatrix({ browser, BASE, check, tolerateApiErrors = f
     if (sel) {
       await page.goto(BASE + `/?m=${sel.message_id}`, { waitUntil: "networkidle" });
       if (font !== 16) await page.addStyleTag({ content: `html{font-size:${font}px !important}` });
-      await page.waitForTimeout(500);
+      // Wait for the condition, not a fixed time: against a remote database (Neon) the detail and the evidence rail arrive hundreds of ms later.
+      await page.locator(w >= 1360 ? ".evidence-dock" : ".pane-detail").first().waitFor({ state: "visible", timeout: 20000 }).catch(() => {});
+      await page.waitForTimeout(100);
       const d = await page.evaluate(() => { const v = (s) => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0; }; return { list: v(".pane-list"), detail: v(".pane-detail"), dock: v(".evidence-dock") }; });
       ok.push([desktop ? d.list && d.detail : d.detail && !d.list, desktop ? "detail opens beside the list" : "phone shows the detail only"]);
       ok.push([d.dock === (w >= 1360), w >= 1360 ? "evidence rail docked" : "evidence is a sheet (button), not docked"]);

@@ -20,12 +20,13 @@ export async function featureChecks({ browser, BASE, check }) {
   await page.keyboard.press("Escape");
   check(!(await dlg.isVisible()), "Esc closes the palette");
   await page.keyboard.press("Control+k"); await page.keyboard.type("scenario 2"); await page.keyboard.press("Enter");
-  await page.waitForURL(/\?m=/, { timeout: 5000 }).catch(() => {});
+  await page.waitForURL(/\?m=/, { timeout: 20000 }).catch(() => {}); // generous: the search runs against the database
   check(/[?&]m=[0-9a-f-]{36}/.test(page.url()), "Enter on a message result opens it at /?m=<id>");
   const withM = page.url();
 
   // URL-addressable selection: reload keeps it, Back returns to the overview, a bad id falls back to the overview.
   await page.reload({ waitUntil: "networkidle" });
+  await page.locator('[data-inbox-row][aria-current="true"]').first().waitFor({ timeout: 20000 }).catch(() => {});
   check(page.url() === withM && (await page.locator('[data-inbox-row][aria-current="true"]').count()) === 1, "reload restores the selected message");
   await page.goto(BASE + "/?m=00000000-0000-4000-8000-000000000000", { waitUntil: "networkidle" });
   check((await page.locator('[data-inbox-row][aria-current="true"]').count()) === 0 && (await page.getByText("Today").first().isVisible()), "an unknown message id shows the overview");

@@ -80,7 +80,9 @@ export default function Workbench() {
     };
     return () => { ch.close(); bc.current = null; };
   }, [refresh]);
-  const loadRun = useCallback((messageId: string, runId: string): Promise<void> => new Promise<void>((resolve) => {
+  // `running` is true only for a run this tab just started or that the server still reports as running. A finished run that is merely being opened
+  // replays its stored trace over the stream; showing those events as progress made the pipeline stepper flash for seconds on a slow database.
+  const loadRun = useCallback((messageId: string, runId: string, running = true): Promise<void> => new Promise<void>((resolve) => {
     watchers.current.get(messageId)?.();
     setRuns((s) => ({ ...s, [messageId]: { status: "loading", live: false } }));
     const fail = (status: number | null) => {
@@ -88,7 +90,7 @@ export default function Workbench() {
       watchers.current.delete(messageId); resolve();
     };
     const cancel = watchRun(runId, {
-      onTrace: (rows) => { const last = rows[rows.length - 1]!; setRuns((s) => ({ ...s, [messageId]: { status: "loading", live: true, label: `Working… ${rows.length} steps done, latest: ${last.stage.replace(/_/g, " ")}`, steps: rows.map((t) => t.stage) } })); },
+      onTrace: (rows) => { if (!running) return; const last = rows[rows.length - 1]!; setRuns((s) => ({ ...s, [messageId]: { status: "loading", live: true, label: `Working… ${rows.length} steps done, latest: ${last.stage.replace(/_/g, " ")}`, steps: rows.map((t) => t.stage) } })); },
       onDone: (j) => {
         setRuns((s) => ({ ...s, [messageId]: { status: "ready", run: j.run, trace: j.trace, reviews: j.reviews ?? [] } }));
         watchers.current.delete(messageId);
@@ -104,7 +106,7 @@ export default function Workbench() {
     setSel(row.message_id); markSeen(row.message_id);
     // A link to /?m=<message id> opens exactly this message.
     if (push) { try { window.history.pushState(null, "", `/?m=${row.message_id}`); } catch { /* ignore */ } }
-    setRuns((s) => { if (!s[row.message_id] && row.run) void loadRun(row.message_id, row.run.id); return s; });
+    setRuns((s) => { if (!s[row.message_id] && row.run) void loadRun(row.message_id, row.run.id, row.run.status === "running"); return s; });
   }, [loadRun]);
   const back = () => { setSel(null); try { window.history.pushState(null, "", "/"); } catch { /* ignore */ } };
 

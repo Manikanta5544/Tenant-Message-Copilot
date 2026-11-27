@@ -26,6 +26,9 @@ type ClientLike = Queryable & { release(err?: boolean | Error): void };
  *  Idle clients are released after 10 s so a quiet instance holds none; a statement that runs over 8 s is cancelled by the server. */
 export const poolMax = () => getEnv().DB_POOL_MAX;
 export const IDLE_MS = 10_000, STATEMENT_MS = 8_000;
+/** Client-side deadline, a little longer than the server's statement_timeout. statement_timeout only works while the server can be reached: on a
+ *  half-dead connection (a laptop that slept, a pooler that dropped the socket) a query would otherwise wait for the OS TCP timeout, about two minutes. */
+export const QUERY_TIMEOUT_MS = STATEMENT_MS + 2_000;
 const waits: number[] = [];
 /** How long callers waited for a pooled connection (last 500), for /system and the load test. */
 export function poolWaitStats() {
@@ -41,12 +44,12 @@ async function makePool(url: string): Promise<PoolLike> {
     const neon = await import("@neondatabase/serverless");
     const ws = (await import("ws")).default;
     neon.neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket;
-    const np = new neon.Pool({ connectionString: url, max: poolMax(), idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, connectionTimeoutMillis: 5000 });
+    const np = new neon.Pool({ connectionString: url, max: poolMax(), idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, query_timeout: QUERY_TIMEOUT_MS, connectionTimeoutMillis: 5000 });
     np.on("error", (err: Error) => console.error("[db] idle client error", err.name));
     return np as unknown as PoolLike;
   }
   // Fail fast when the host is unreachable (default is to wait forever).
-  const pool = new pg.Pool({ connectionString: url, max: poolMax(), idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, connectionTimeoutMillis: 5000 });
+  const pool = new pg.Pool({ connectionString: url, max: poolMax(), idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_MS, query_timeout: QUERY_TIMEOUT_MS, keepAlive: true, keepAliveInitialDelayMillis: 10_000, connectionTimeoutMillis: 5000 });
   // An idle client can error (server restart, Neon scale-to-zero). Unhandled, that event would crash the function instance.
   pool.on("error", (err) => console.error("[db] idle client error", err.name));
   return pool as unknown as PoolLike;
@@ -107,21 +110,31 @@ export function sqlLiteral(v: string): string {
   return `'${v.replace(/'/g, "''")}'`;
 }
 
+/** The organisation-wide inbox view (no resident) is read-only by row level security: every write policy needs a resident scope. */
+export const readOnlyScope = (scope: Scope): boolean => scope.view === "inbox" && !scope.residentId;
+
 export async function withScope<T>(url: string, scope: Scope, fn: (db: Queryable) => Promise<T>): Promise<T> {
   await ensureSchema(url);
   const client = await connectClient(url);
-  let broken = false;
+  let broken = false, handedOff = false;
   try {
     // BEGIN and the scope settings travel in ONE round trip (simple-query protocol, values escaped by the driver): one fewer network hop on every request.
     const lit = (v: string | null | undefined) => sqlLiteral(v ?? "");
     await client.query(`BEGIN; SELECT set_config('app.org_id', ${lit(scope.orgId)}, true), set_config('app.resident_id', ${lit(scope.residentId)}, true), set_config('app.view', ${lit(scope.view)}, true)`);
     const out = await fn(client);
+    if (readOnlyScope(scope)) {
+      // Nothing to make durable, so the caller does not wait for COMMIT (one network round trip, 100 to 250 ms to a remote Neon).
+      // The connection goes back to the pool only after COMMIT has finished, so the transaction-local scope can never reach another request.
+      handedOff = true;
+      client.query("COMMIT").then(() => client.release(), () => client.release(true));
+      return out;
+    }
     await client.query("COMMIT");
     return out;
   } catch (e) {
     try { await client.query("ROLLBACK"); } catch { broken = true; /* connection already broken: destroy it, do not return it to the pool */ }
     throw e;
   } finally {
-    client.release(broken);
+    if (!handedOff) client.release(broken);
   }
 }

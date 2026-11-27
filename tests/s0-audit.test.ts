@@ -47,3 +47,15 @@ describe("doctor: rate-limit identity", () => {
     for (const extra of [{ TRUST_PROXY: "1" }, { VERCEL: "1" }]) expect((await doctor({ ...base, ...extra }, { roundtrip: false })).some((c) => c.name === "rate-limit identity")).toBe(false);
   });
 });
+
+describe("doctor: production configuration is checked even when run in development", () => {
+  const dev = { NODE_ENV: "development", PROVIDER_MODE: "replay", DATABASE_URL_APP: "postgres://a:b@127.0.0.1:1/d" };
+  it("warns that a short VISITOR_SALT would be rejected by `next start`", async () => {
+    const r = (await doctor({ ...dev, VISITOR_SALT: "short" }, { roundtrip: false })).find((c) => c.name === "production configuration");
+    expect(r).toMatchObject({ ok: true, warn: true }); expect(r?.detail).toMatch(/VISITOR_SALT/);
+  });
+  it("is quiet about the salt when it is long enough", async () => {
+    const r = (await doctor({ ...dev, VISITOR_SALT: "x".repeat(40), LLM_API_KEY: "k".repeat(24) }, { roundtrip: false })).find((c) => c.name === "production configuration");
+    expect(r?.detail ?? "").not.toMatch(/VISITOR_SALT/);
+  });
+});
