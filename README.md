@@ -79,6 +79,8 @@ See `.env.example` (every variable is commented). Secrets stay server side; `.en
 3. Set the Vercel function region next to your Neon region.
 4. Run the isolation tests against Neon by setting `TEST_DATABASE_URL_OWNER/APP` to a throwaway Neon branch (not yet done: unverified).
 
+**Rate limits and scale.** Behind Vercel or `TRUST_PROXY=1` limits apply per visitor and per network. Without a trusted proxy the per-visitor limits are cookie-only and therefore advisory (`npm run doctor` warns in production); only the global daily cap and budget are a hard stop. Model concurrency is `LLM_MAX_CONCURRENCY` x instances and SSE caps are per instance. On one multi-core host, `npm run start:cluster` (`WEB_CONCURRENCY`) runs one worker per core; those per-process caps then multiply.
+
 ## Operations notes
 
 - **Live trace.** `POST /api/runs` returns at once and the pipeline finishes after the response; the UI polls every 700 ms. This is polling, not SSE (SSE was a Tier 2 item and was skipped).

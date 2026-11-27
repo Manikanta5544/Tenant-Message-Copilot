@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { staticAssetHeaders } from "./core/static-headers";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config: NextConfig = {
@@ -10,21 +11,16 @@ const config: NextConfig = {
   turbopack: { root: here },
   // Dev only: the Next.js "N" badge sits bottom-right; the layout keeps it clear of the footer and composer (checked in e2e).
   devIndicators: { position: "bottom-right" },
+  // `next build` type-checks this config's tsconfig only: tests/, e2e/ and scripts/ are checked by `npm run typecheck`, so a bad test file
+  // can never block a production build.
+  typescript: { tsconfigPath: "tsconfig.build.json" },
   serverExternalPackages: ["pg", "ws"],
   // Recorded model responses are read from disk at runtime by replay mode.
   outputFileTracingIncludes: { "/api/runs": ["./evals/fixtures/**/*"] },
   // The CSP (with its per-request nonce) and the other security headers are set in proxy.ts.
   // Static assets get the non-CSP headers here so they are covered even though the proxy skips them.
   async headers() {
-    return [{
-      source: "/_next/static/:path*",
-      headers: [
-        { key: "X-Content-Type-Options", value: "nosniff" },
-        ...(process.env.NODE_ENV === "production"
-          ? [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }]
-          : []),
-      ],
-    }];
+    return [{ source: "/_next/static/:path*", headers: staticAssetHeaders(process.env.NODE_ENV) }];
   },
 };
 export default config;

@@ -29,10 +29,13 @@
     "e2e": "node e2e/run.mjs",
     "e2e:layout": "node e2e/layout.mjs",
     "e2e:stale": "node e2e/stale-origin.mjs",
+    "e2e:a11y": "node e2e/a11y.mjs",
+    "s0-audit": "tsx scripts/s0-audit.ts",
     "e2e:darkreader": "node e2e/darkreader.mjs",
     "explain": "node scripts/check-node.mjs && tsx --env-file-if-exists=.env scripts/explain.ts",
     "load": "node scripts/load.mjs",
-    "perf": "node scripts/perf.mjs"
+    "perf": "node scripts/perf.mjs",
+    "start:cluster": "node scripts/start-cluster.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.10.0",
@@ -53,6 +56,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.18.2",
+    "axe-core": "4.14.1",
     "pg": "^8.23.1",
     "playwright": "1.63.0",
     "postcss": "^8.5.33",
