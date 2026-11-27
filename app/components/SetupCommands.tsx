@@ -23,7 +23,7 @@ export default function SetupCommands() {
         ))}
       </div>
       <div className="mt-2 flex items-start gap-2">
-        <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-bg-subtle p-2.5 font-mono text-sm leading-6 text-text">{text}</pre>
+        <pre tabIndex={0} role="region" aria-label="Setup commands" className="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-bg-subtle p-2.5 font-mono text-sm leading-6 text-text">{text}</pre>
         <Button onClick={copy} aria-label="Copy setup commands">{copied ? "Copied" : "Copy"}</Button>
       </div>
     </div>

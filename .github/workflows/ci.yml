@@ -22,9 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev --audit-level=high
@@ -46,9 +46,9 @@ jobs:
       APP_ROLE_PASSWORD: app
       DEMO_AS_OF_DATE: "2026-11-19"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci
       - run: npm run typecheck
@@ -58,9 +58,8 @@ jobs:
         run: npm test
       - name: "Critical-20 through the real pipeline on the labelled mock (fails on any S0)"
         run: npm run eval:mock
-      - name: "Replay recorded real model responses (only when recordings are committed)"
-        run: |
-          if [ -s evals/fixtures/recorded.json ]; then npm run eval:replay; else echo "no recordings committed: replay skipped (unverified)"; fi
+      - name: "Replay recorded real model responses (prints NOT RUN and exits 0 when no recording is committed)"
+        run: npm run eval:replay
       - name: "Build with canary secrets, then check the CSS and scan the client bundle for them"
         env:
           LLM_API_KEY: gsk_ci_canary_0123456789abcdefghij
@@ -68,20 +67,23 @@ jobs:
         run: npm run build && npm run check:css && npm run scan:bundle
       - name: "Install Chromium for Playwright"
         run: npx playwright install --with-deps chromium
-      - name: "Migrate, seed and start the production server"
+      - name: "Migrate and seed"
         env:
           PROVIDER_MODE: replay
           VISITOR_SALT: ci-visitor-salt-0123456789abcdef0123456789
+        run: npm run migrate && npm run seed -- --no-baselines
+      - name: "Start the production server, run the e2e suite (production mode is asserted) and the axe accessibility run"
+        env:
+          PROVIDER_MODE: replay
+          VISITOR_SALT: ci-visitor-salt-0123456789abcdef0123456789
+          E2E_PRODUCTION: "1"
+          E2E_FLOWS: "0"
         run: |
-          npm run migrate && npm run seed -- --no-baselines
-          nohup npm start -- -p 3000 > server.log 2>&1 &
-          node scripts/wait-for.mjs http://localhost:3000/api/health 60
-      - name: "End-to-end: production headers, nonce CSP, zero violations, no horizontal scroll"
-        env: { BASE_URL: "http://localhost:3000", E2E_PRODUCTION: "1", E2E_FLOWS: "0" }
-        run: npm run e2e
-      - name: "Server log (on failure)"
+          node scripts/with-server.mjs --port 3000 --wait /api/health --log server.log -- "npm run e2e 2>&1 | tee e2e.log && grep -q '^mode: production' e2e.log && npm run e2e:a11y"
+      - name: "Upload server and e2e logs (on failure)"
         if: failure()
-        run: tail -n 200 server.log || true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: verify-logs, path: "server.log\ne2e.log\ntest-results", if-no-files-found: ignore }
 
   windows-layout:
     # The class of bug that showed the mobile layout at 1920 px on a developer's Windows machine: build on Windows, assert the emitted CSS
@@ -97,28 +99,43 @@ jobs:
       APP_ROLE_PASSWORD: app
       DEMO_AS_OF_DATE: "2026-11-19"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version-file: .nvmrc, cache: npm }
+      - name: "Allow long paths and keep LF line endings (Windows)"
+        run: git config --system core.longpaths true || git config --global core.longpaths true
       - run: npm ci
       - run: npm run build
       - run: npm run check:css
       - name: "Install Chromium for Playwright"
         run: npx playwright install chromium
-      - name: "Start the production server"
-        run: |
-          nohup npm start -- -p 3000 > server.log 2>&1 &
-          node scripts/wait-for.mjs http://localhost:3000/api/health 60
-      - name: "Render the layout matrix in Chromium"
-        env: { BASE_URL: "http://localhost:3000" }
-        run: node e2e/layout.mjs
-      - name: "Server log (on failure)"
+      - name: "Render the layout matrix against the production server (a Node script starts, waits for and stops the server, the same on every OS)"
+        run: node scripts/with-server.mjs --port 3000 --wait /api/health --log server.log -- "node e2e/layout.mjs"
+      - name: "Upload server log (on failure)"
         if: failure()
-        run: tail -n 200 server.log || true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: windows-logs, path: server.log, if-no-files-found: ignore }
+
+  verify-neon:
+    # Opt-in (workflow_dispatch). The 8 database-isolation tests skip with a loud warning unless a real Neon/pooled URL is supplied:
+    # add the NEON_OWNER_URL and NEON_APP_URL repository secrets, then run this workflow by hand.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TEST_DATABASE_URL_OWNER: ${{ secrets.NEON_OWNER_URL }}
+      TEST_DATABASE_URL_APP: ${{ secrets.NEON_APP_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run verify:neon
 
   live-eval:
-    # Manual only: spends model quota. Needs the LLM_API_KEY repository secret. Refuses an invalid run (npm run eval exits non-zero
+    # Manual only (workflow_dispatch), so a skipped live-eval on a push or pull request is correct, not a failure: it spends model quota. Needs the LLM_API_KEY repository secret. Refuses an invalid run (npm run eval exits non-zero
     # when the validity rule fails, a model ID is unavailable, or the gate fails), and uploads the recording for review.
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -138,9 +155,9 @@ jobs:
       LLM_REASONING_EFFORT: low
       LLM_OUTPUT_HEADROOM: "1000"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci
       - run: npm run migrate && npm run seed -- --no-baselines
@@ -148,6 +165,6 @@ jobs:
         run: npm run doctor
       - name: "Live eval: any S0 fails; an invalid run (fallbacks, wrong models) is refused"
         run: npm run eval
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with: { name: live-eval-recording, path: evals/fixtures/recorded.json }

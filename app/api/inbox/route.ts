@@ -1,5 +1,5 @@
-import { latestEvalRuns, listInbox, listResidents, visitorHash } from "@/db/runs";
-import { countMissingBaselines } from "@/db/baselines";
+import { visitorHash } from "@/db/runs";
+import { cachedEvalRuns, cachedInbox, cachedMissingBaselines, cachedResidents } from "@/app/server/inbox";
 import { getEnv } from "@/core/env";
 import { clientKey, fail, jsonWithEtag } from "@/app/server/http";
 
@@ -8,9 +8,11 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
-    const [messages, residents, missing] = await Promise.all([listInbox(visitorHash(clientKey(req).ip)), listResidents(), countMissingBaselines()]);
+    const [messages, residents, missing] = await Promise.all([cachedInbox(visitorHash(clientKey(req).ip)), cachedResidents(), cachedMissingBaselines()]);
+    // Additive: tells the UI when `npm run seed` has not produced usable baselines yet (never blocks the inbox itself).
+    // Additive: the facts the empty-detail overview shows (latest critical-set eval gate, and which model/mode answers).
     const env = getEnv();
-    const evals = await latestEvalRuns(10).catch(() => []);
+    const evals = await cachedEvalRuns();
     const e = evals.find((r) => (r.summary.tier ?? 1) === 1 && r.summary.validity?.valid !== false);
     const overview = {
       eval: e ? { passed: Number(e.summary.passed), total: Number(e.summary.total), gate_ok: !!e.summary.gate?.ok, mode: String(e.mode), prompt_version: String(e.prompt_version), at: e.created_at } : null,

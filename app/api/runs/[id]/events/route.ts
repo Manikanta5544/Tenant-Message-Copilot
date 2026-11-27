@@ -17,8 +17,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     z.string().uuid().parse(id);
     const env = getEnv();
     caps.maxPerIp = env.SSE_MAX_PER_IP; caps.maxGlobal = env.SSE_MAX_GLOBAL;
-    const { ip } = clientKey(req);
-    const release = caps.acquire(ip, ip !== "untrusted");
+    const { ip, net } = clientKey(req);
+    // The per-client stream cap follows the network address when a trusted proxy gives one, so discarding cookies does not multiply streams.
+    const release = caps.acquire(net ?? ip, (net ?? ip) !== "untrusted");
     if (!release) noteEvent("stream_cap");
     if (!release) return Response.json({ error: "too many live streams; the page falls back to polling", code: "stream_cap" }, { status: 429, headers: { "retry-after": "5" } });
     if (!(await pollRun(id, 2_147_483_647).catch((e) => { release(); throw e; }))) { release(); throw new HttpError(404, "run not found"); }
