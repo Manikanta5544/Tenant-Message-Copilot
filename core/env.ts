@@ -7,6 +7,8 @@ import { z } from "zod";
 export type RawEnv = Record<string, string | undefined>;
 /** The only place the process environment is read. */
 export const rawEnv = (): RawEnv => process.env;
+/** True in a production deployment. App code asks here instead of reading process.env (D6). */
+export const isProduction = (): boolean => rawEnv().NODE_ENV === "production";
 
 /** Empty strings in .env files mean "unset". */
 const blank = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
@@ -42,6 +44,8 @@ const schema = z.object({
   LLM_REASONING_EFFORT_FAST: z.preprocess(blank, z.enum(["low", "medium", "high"]).optional()),
   /** Model calls in flight per server instance, and how long a call may wait for a slot before the honest "busy" fallback. */
   LLM_MAX_CONCURRENCY: int(4, 1, 64),
+  /** Database connections per server instance. Idle ones are released after 10 s, so the pool shrinks back to 0. Keep instances x this below the pooler's limit. */
+  DB_POOL_MAX: int(10, 1, 50),
   LLM_QUEUE_WAIT_MS: int(8000, 0, 60_000),
   /** Live-stream (SSE) connection caps: per client IP, and per server instance. Beyond them the stream answers 429 and the browser polls instead. */
   SSE_MAX_PER_IP: int(4, 1, 50),
@@ -54,6 +58,9 @@ const schema = z.object({
   DEMO_MAX_RUNS_PER_DAY: int(150),
   RATE_LIMIT_PER_HOUR: int(20),
   RATE_LIMIT_PER_DAY: int(40),
+  /** Per-network ceilings (behind a trusted proxy), independent of the visitor cookie. 0 = automatic: 3x RATE_LIMIT_PER_HOUR, and a quarter of DEMO_MAX_RUNS_PER_DAY. */
+  RATE_LIMIT_PER_IP_PER_HOUR: int(0, 0, 100_000),
+  RATE_LIMIT_PER_IP_PER_DAY: int(0, 0, 100_000),
   MESSAGE_LIMIT_PER_HOUR: int(10),
   EVAL_PACE_MS: int(2000, 0, 60_000),
 

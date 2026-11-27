@@ -81,15 +81,19 @@ const MATCH_WINDOW_DAYS = 3;
 export function buildClaimMatch(ids: FactIds, ctx: FactCtx, events: PaymentEventRow[], claim: Claim): ClaimMatchFact {
   const live = events.filter((e) => !e.is_duplicate && e.received_on <= ctx.asOf);
   let hit: PaymentEventRow | undefined;
+  // A reference alone is not a match: when the tenant also states an amount or a date, they must agree with that payment, otherwise
+  // "ref X, paid 5,000" would be verified against a payment of a different amount. The mismatch is reported as unmatched, with the reference
+  // listed under near_references so the reviewer sees what it pointed at.
+  const byRef = claim.reference ? live.find((e) => e.reference.toLowerCase() === claim.reference!.toLowerCase()) : undefined;
   if (claim.reference) {
-    hit = live.find((e) => e.reference.toLowerCase() === claim.reference!.toLowerCase());
+    if (byRef && (claim.amount_paise === null || byRef.amount_paise === claim.amount_paise) && (!claim.date || dayDiff(byRef.received_on, claim.date) <= MATCH_WINDOW_DAYS)) hit = byRef;
   } else if (claim.amount_paise !== null) {
     const cands = live.filter((e) => e.amount_paise === claim.amount_paise && (!claim.date || dayDiff(e.received_on, claim.date) <= MATCH_WINDOW_DAYS));
     cands.sort((a, b) => (claim.date ? dayDiff(a.received_on, claim.date) - dayDiff(b.received_on, claim.date) : 0) || b.received_on.localeCompare(a.received_on));
     hit = cands[0];
   }
-  const near = live
-    .filter((e) => e !== hit && ((claim.amount_paise !== null && e.amount_paise === claim.amount_paise) || (claim.date && dayDiff(e.received_on, claim.date) <= MATCH_WINDOW_DAYS)))
+  const near = [...(byRef && byRef !== hit ? [byRef] : []), ...live.filter((e) => e !== byRef)]
+    .filter((e) => e !== hit && (e === byRef || (claim.amount_paise !== null && e.amount_paise === claim.amount_paise) || (claim.date && dayDiff(e.received_on, claim.date) <= MATCH_WINDOW_DAYS)))
     .slice(0, 3).map((e) => e.reference);
   return {
     id: ids.nextFact(), kind: "claim_match", residentId: ctx.residentId, leaseId: ctx.leaseId,
