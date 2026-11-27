@@ -38,7 +38,7 @@
     "start:cluster": "node scripts/start-cluster.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.10.0",
+    "@anthropic-ai/sdk": "^1.13.0",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@fontsource-variable/source-serif-4": "5.3.1",
@@ -58,7 +58,7 @@
     "@types/ws": "^8.18.2",
     "axe-core": "4.14.1",
     "pg": "^8.23.1",
-    "playwright": "1.63.0",
+    "playwright": "1.65.1",
     "postcss": "^8.5.33",
     "tailwindcss": "^4.3.5",
     "tsx": "^4.23.15",
