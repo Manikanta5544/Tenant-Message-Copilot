@@ -134,3 +134,16 @@ describe.skipIf(!HAS_DB)("single flight per (message, visitor)", () => {
     await Promise.all([x!.execute?.(), y!.execute?.()]);
   });
 });
+
+describe.skipIf(!HAS_DB)("run service: key reuse while another run is in flight", () => {
+  afterAll(closeAllPools);
+  it("a key used for message A is a 409 for message B even when B has a run in flight (not a silent join)", async () => {
+    const visitor = visitorHash(`inflight-${randomUUID()}`);        // a private visitor: no other test can have a run in flight for it
+    const keyA = randomUUID();
+    await createRun({ messageId: msg(2), idempotencyKey: keyA, provider: provider(), visitor });
+    await createRun({ messageId: msg(3), idempotencyKey: randomUUID(), provider: provider(), visitor }); // B in flight, never executed
+    await expect(createRun({ messageId: msg(3), idempotencyKey: keyA, provider: provider(), visitor })).rejects.toMatchObject({ status: 409 });
+    const owner = new pg.Client({ connectionString: OWNER_URL }); await owner.connect();
+    await owner.query(`UPDATE runs SET status='failed', finished_at=now() WHERE visitor_hash=$1`, [visitor]); await owner.end();
+  });
+});

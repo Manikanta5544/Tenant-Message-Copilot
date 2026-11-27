@@ -12,16 +12,34 @@ import { APP_URL, HAS_DB, OWNER_URL } from "./helpers";
 process.env.DATABASE_URL_APP = APP_URL;
 process.env.DEMO_AS_OF_DATE = "2026-11-19";
 process.env.DEMO_DAILY_BUDGET_USD = "50";
-const msg = uid("message", 2); // Asha: balance question
+// Message 3: no other test file creates shared (visitor-less) runs for it, so a concurrent file cannot replace the baseline under us.
+const msg = uid("message", 3);
 const run = (visitor: string | null) => startRun({ messageId: msg, idempotencyKey: randomUUID(), provider: new MockProvider(), visitor });
+// The shared (visitor-less) baseline can be another file's in-flight run (single flight joins it), so wait for it to finish: poll with a deadline.
+async function settled(runId: string) {
+  const end = Date.now() + 10_000;
+  for (;;) {
+    const g = await getRun(runId);
+    if (g && g.run.status !== "running") return g;
+    if (Date.now() > end) throw new Error(`run ${runId} still running after 10 s`);
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
 const rowFor = async (visitor: string | null) => (await listInbox(visitor)).find((r) => r.message_id === msg)!;
 
 describe.skipIf(!HAS_DB)("D3 visitor-scoped demo state", () => {
   afterAll(closeAllPools);
-  const A = visitorHash("10.0.0.1"), B = visitorHash("10.0.0.2");
+  // Fresh visitors per test (not shared constants), so the tests pass in any order.
+  const fresh = () => visitorHash(`t-${randomUUID()}`);
 
   it("two visitors: one visitor's failed run cannot change another's inbox", async () => {
+    const A = fresh(), B = fresh();
+    // Other test files create visitor-less runs and never execute them; such a leftover 'running' row would make single flight join it
+    // instead of creating our baseline. Close any before we start.
+    const o = new pg.Client({ connectionString: OWNER_URL }); await o.connect();
+    await o.query(`UPDATE runs SET status='failed', finished_at=now() WHERE message_id=$1 AND visitor_hash IS NULL AND status='running'`, [msg]); await o.end();
     const baseline = await run(null);                 // the shared baseline (as `npm run seed` creates)
+    await settled(baseline.runId);
     expect((await rowFor(A)).run!.id).toBe(baseline.runId);
     expect((await rowFor(B)).run!.id).toBe(baseline.runId);
 
@@ -41,11 +59,15 @@ describe.skipIf(!HAS_DB)("D3 visitor-scoped demo state", () => {
   });
 
   it("a visitor's newer run replaces only their own view; the baseline survives", async () => {
+    const B = fresh();
+    const baseline = await run(null);               // its own baseline: nothing depends on another test having made one
     const first = await run(B); const second = await run(B);
     expect((await rowFor(B)).run!.id).toBe(second.runId);
     expect(first.runId).not.toBe(second.runId);
-    const other = visitorHash("10.0.0.3");
+    const other = fresh();
     expect((await rowFor(other)).run!.id).not.toBe(second.runId);
+    expect((await rowFor(other)).run!.id).toBeTruthy();
+    expect(baseline.runId).not.toBe(second.runId);
   });
 });
 

@@ -20,7 +20,7 @@ import { APP_URL, HAS_DB, OWNER_URL } from "./helpers";
 
 describe("schema version (pure)", () => {
   it("lists exactly the migrations the database lacks", () => {
-    expect(missingMigrations(MIGRATIONS.slice(0, 6), MIGRATIONS)).toEqual(["0007_review_actions.sql", "0008_visitor_run_selection.sql", "0009_single_flight.sql"]);
+    expect(missingMigrations(MIGRATIONS.slice(0, 6), MIGRATIONS)).toEqual(["0007_review_actions.sql", "0008_visitor_run_selection.sql", "0009_single_flight.sql", "0010_run_net_hash.sql"]);
     expect(missingMigrations(MIGRATIONS, MIGRATIONS)).toEqual([]);
   });
   it("a failed check is not cached; a passing one is", async () => {
@@ -78,6 +78,8 @@ describe("UI: reading an API problem (mocked 503 schema_out_of_date)", () => {
 
 // The owner's failure: a database at 0006 with new code. Built on a scratch copy so the shared test database is untouched.
 describe.skipIf(!HAS_DB)("upgrade path: DB at 0006 -> new code -> migrate + seed", () => {
+  const steps: [string, (ctx: { skip: () => never }) => Promise<void>][] = [];
+  const step = (name: string, fn: (ctx: { skip: () => never }) => Promise<void>) => { steps.push([name, fn]); };
   const dbName = `copilot_up_${randomUUID().slice(0, 8)}`;
   const swap = (u: string) => { const x = new URL(u); x.pathname = `/${dbName}`; return x.toString(); };
   let ownerU = "", appU = "", canCreate = true;
@@ -109,7 +111,7 @@ describe.skipIf(!HAS_DB)("upgrade path: DB at 0006 -> new code -> migrate + seed
     await admin.end();
   });
 
-  it("schema behind: the inbox and a run read answer 503 with the hint (not an opaque 500)", async (ctx) => {
+  step("schema behind: the inbox and a run read answer 503 with the hint (not an opaque 500)", async (ctx) => {
     if (!canCreate) return ctx.skip();
     await expect(ensureSchema(appUrl())).rejects.toBeInstanceOf(SchemaOutOfDateError);
     const { GET: inbox } = await import("../app/api/inbox/route");
@@ -121,9 +123,9 @@ describe.skipIf(!HAS_DB)("upgrade path: DB at 0006 -> new code -> migrate + seed
     expect(r2.status).toBe(503);
   });
 
-  it("after migrate: the schema guard passes without a restart, and with no baselines the inbox reports setup", async (ctx) => {
+  step("after migrate: the schema guard passes without a restart, and with no baselines the inbox reports setup", async (ctx) => {
     if (!canCreate) return ctx.skip();
-    expect((await migrate(ownerU)).sort()).toEqual(["0007_review_actions.sql", "0008_visitor_run_selection.sql", "0009_single_flight.sql"]);
+    expect((await migrate(ownerU)).sort()).toEqual(["0007_review_actions.sql", "0008_visitor_run_selection.sql", "0009_single_flight.sql", "0010_run_net_hash.sql"]);
     await seed(ownerU);
     await ensureSchema(appUrl());
     expect(await countMissingBaselines()).toBe(5);
@@ -132,7 +134,7 @@ describe.skipIf(!HAS_DB)("upgrade path: DB at 0006 -> new code -> migrate + seed
     expect(j.setup).toEqual({ baselines_missing: 5, dev: true });
   });
 
-  it("a failing provider: seed creates no baselines, reports each failure and exits non-zero; a fallback run is never kept", async (ctx) => {
+  step("a failing provider: seed creates no baselines, reports each failure and exits non-zero; a fallback run is never kept", async (ctx) => {
     if (!canCreate) return ctx.skip();
     const down: LLMProvider = { ...new MockProvider(),
       classify: async () => { throw new ProviderError("unavailable", "down"); }, draft: async () => { throw new ProviderError("unavailable", "down"); },
@@ -147,7 +149,7 @@ describe.skipIf(!HAS_DB)("upgrade path: DB at 0006 -> new code -> migrate + seed
     expect(out.join("\n")).toMatch(/NOT created/i);
   });
 
-  it("re-running seed with a working provider replaces the fallback baselines; then the setup field disappears", async (ctx) => {
+  step("re-running seed with a working provider replaces the fallback baselines; then the setup field disappears", async (ctx) => {
     if (!canCreate) return ctx.skip();
     const r = await seedBaselines(new MockProvider());
     expect(r.failed).toEqual([]);
@@ -159,5 +161,12 @@ describe.skipIf(!HAS_DB)("upgrade path: DB at 0006 -> new code -> migrate + seed
     expect(j.setup).toBeUndefined();
     expect(j.messages.filter((m: { run: unknown }) => m.run).length).toBeGreaterThanOrEqual(5);
     void uid; void startRun;
+  });
+  // The steps are one ordered scenario (downgrade, migrate, seed, re-seed) on a dedicated database. As separate tests a shuffled run would
+  // execute them out of order, so they run as steps of a single test and a failure names the step.
+  it("upgrade path, in order", async (ctx) => {
+    for (const [name, fn] of steps) {
+      try { await fn(ctx); } catch (e) { if (e instanceof Error && /skip/i.test(e.name + e.message)) throw e; throw new Error(`step "${name}": ${e instanceof Error ? e.message : String(e)}`, { cause: e }); }
+    }
   });
 });

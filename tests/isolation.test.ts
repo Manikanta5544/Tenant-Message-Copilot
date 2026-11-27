@@ -15,6 +15,8 @@ const ALL_TABLES = ["organizations", "residents", "eval_runs", "budget_days", ..
 const count = async (db: Queryable, t: string) => Number((await db.query(`SELECT count(*)::int AS n FROM ${t}`)).rows[0]!.n);
 
 for (const [label, url] of TARGETS) {
+  // A skipped suite must be impossible to miss: say what was not verified and the exact command that verifies it.
+  if (!url) console.warn(`\n[SKIPPED, UNVERIFIED] isolation on ${label}: ${label.startsWith("neon") ? "DATABASE_URL_APP is not a *.neon.tech URL. Verify with: TEST_DATABASE_URL_OWNER=<direct url> TEST_DATABASE_URL_APP=<pooled url> npm run verify:neon" : "no local test database. Start Postgres 16 and set TEST_DATABASE_URL_OWNER and TEST_DATABASE_URL_APP"}\n`);
   describe.skipIf(!url)(`isolation on ${label}`, () => {
     afterAll(closeAllPools);
     const scoped = <T>(s: Parameters<typeof withScope>[1], fn: (db: Queryable) => Promise<T>) => withScope(url!, s, fn);

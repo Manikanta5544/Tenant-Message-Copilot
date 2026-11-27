@@ -160,10 +160,12 @@ describe("every DB route answers 503 (not 500) when Postgres is down or unconfig
 
 describe("/setup", () => {
   it("does not exist in production (404) and renders in development", async () => {
+    // Import first: React picks its dev or production JSX runtime when it is first loaded, so loading it with NODE_ENV=production would
+    // break every later test in this worker that renders a page (jsxDEV is not a function), depending on test order.
+    const { default: Setup } = await import("../app/setup/page");
     const prev = process.env.NODE_ENV;
     try {
       (process.env as Record<string, string>).NODE_ENV = "production";
-      const { default: Setup } = await import("../app/setup/page");
       await expect(Setup()).rejects.toMatchObject({ digest: expect.stringContaining("404") });
     } finally { (process.env as Record<string, string>).NODE_ENV = prev!; }
   });

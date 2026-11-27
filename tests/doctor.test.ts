@@ -26,6 +26,14 @@ describe("doctor", () => {
     expect(r.filter((c) => !c.ok)).toEqual([]);
     expect(r.map((c) => c.name)).toEqual(expect.arrayContaining(["database (owner role)", "RLS role is non-bypass", "migrations current"]));
   });
+  it.skipIf(!HAS_DB)("--deep runs the S0 audit in replay mode too (it used to return before reaching it)", async () => {
+    const base = { DATABASE_URL_OWNER: OWNER_URL, DATABASE_URL_APP: APP_URL, PROVIDER_MODE: "replay" };
+    expect((await doctor(base)).some((c) => /S0 audit/.test(c.name))).toBe(false);
+    const deep = await doctor(base, { deep: true });
+    const s0 = deep.find((c) => /S0 audit/.test(c.name));
+    expect(s0, "no S0 audit line").toBeDefined();
+    expect(s0!.ok).toBe(true);
+  });
   it.skipIf(!HAS_DB)("live: flags a configured model the key does not list, and prints billed round trips", async () => {
     const base = { DATABASE_URL_OWNER: OWNER_URL, DATABASE_URL_APP: APP_URL, PROVIDER_MODE: "live", LLM_API_KEY: "k", LLM_MODEL_TRIAGE: "a/x", LLM_MODEL_DRAFT: "a/y", LLM_MODEL_CHECK: "a/x", LLM_PRICES_JSON: JSON.stringify({ "a/x": { in: 1, out: 1 }, "a/y": { in: 1, out: 1 } }) };
     const good = await doctor(base, { fetch: modelsOk(["a/x", "a/y"]) });

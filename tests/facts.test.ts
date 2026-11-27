@@ -21,6 +21,19 @@ describe("claim matching", () => {
   it("matches by reference regardless of state, case-insensitively", () => {
     expect(match({ amount_paise: null, date: null, reference: "upi-a101-fail" }).matched_state).toBe("failed");
   });
+  it("a claimed reference must agree with the claimed amount and date, else it is unmatched and the reference is listed as near (S2)", () => {
+    const wrongAmount = match({ amount_paise: 500000, date: null, reference: "UPI-A101-5521" });
+    expect(wrongAmount.matched).toBe(false);
+    expect(wrongAmount.matched_reference).toBeNull();
+    expect(wrongAmount.near_references).toContain("UPI-A101-5521");
+    const wrongDate = match({ amount_paise: 800000, date: "2026-10-01", reference: "UPI-A101-5521" });
+    expect(wrongDate.matched).toBe(false);
+    expect(wrongDate.near_references[0]).toBe("UPI-A101-5521");
+    const agrees = match({ amount_paise: 800000, date: "2026-11-13", reference: "UPI-A101-5521" });
+    expect(agrees.matched).toBe(true);
+    expect(agrees.matched_reference).toBe("UPI-A101-5521");
+    expect(agrees.near_references).not.toContain("UPI-A101-5521");
+  });
   it("reports no match for an amount nobody paid, with near matches listed", () => {
     const m = match({ amount_paise: 2000000, date: "2026-11-18", reference: null });
     expect(m.matched).toBe(false);
