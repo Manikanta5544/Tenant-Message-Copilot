@@ -4,7 +4,7 @@ Everything here was measured in this build environment: **2 vCPUs shared by the 
 
 ## Front end (`npm run perf`, production build, Chromium 1280x800, 5 cold loads, median)
 
-| metric | zip  | now | budget |
+| metric | baseline | current | budget |
 |---|---|---|---|
 | JS on first load (gzip) | 160 KB | **162 KB** (the visitor-cookie and 429 reset-time code) | ≤ 170 |
 | LCP | 92 ms | **92 to 124 ms** across three runs | ≤ 1500 |
@@ -191,11 +191,11 @@ Evidence reads are started while triage runs (see DECISIONS 67). Gain is the evi
 Live Groq under load, retry rate before/after the prompt fix on live traffic, Neon pooled behaviour, real network latency. See the final report for the commands.
 
 
-## load after the latency work (production build, 2 vCPU shared with the load generator and Postgres)
+## Load after the latency work (production build, 2 vCPU shared with the load generator and Postgres)
 
 Changes measured here: `/api/*` skips the nonce/cookie work in the proxy, `set_config` and the query go in one round trip, the run GET answers 304 from a cheap version token before building a body, the inbox has a per-visitor cache (TTL 1.5 s, cleared on every write by this process), and the pool is 10 (`DB_POOL_MAX`). Command: `BASE_URL=http://localhost:3100 npm run load -- N`, one run each, single Node process.
 
-| operation (p95 ms) | budget | zip 7 @50 | zip 9 @10 | zip 9 @25 | zip 9 @50 | zip 9 @50, 2 workers |
+| operation (p95 ms) | budget | before @50 | after @10 | after @25 | after @50 | after @50, 2 workers |
 |---|---|---|---|---|---|---|
 | inbox | 120 | 422 | 103 (pass) | 189 | 395 | 450 |
 | stored run | 80 | 313 | 120 | 231 | 380 | 441 |
@@ -207,7 +207,7 @@ Changes measured here: `/api/*` skips the nonce/cookie work in the proxy, `set_c
 
 **Not met:** the inbox, stored run, 304 and create budgets are still missed at 25 and 50 simultaneous visitors, and 304 and create at 10. The only budget that moved from fail to pass at 50 is the stream first event. The machine has 2 cores shared by the load generator, Postgres and the server, so the server is CPU-bound; running two workers (`npm run start:cluster`, `WEB_CONCURRENCY=2`) gave no improvement here because there are no spare cores. The budgets were set for at least 4 cores and were not changed. Re-measure on such a host with `npm run load -- 50`; nothing here shows they pass there.
 
-### Final verification run (fresh directory, fresh `npm ci`, production build, 2 vCPU shared)
+### Verification run (clean checkout, production build, 2 vCPU shared)
 
 p50 / p95 / p99 in ms, one run per level, single Node process, `BASE_URL` = the server started by `scripts/with-server.mjs`.
 
@@ -222,3 +222,24 @@ p50 / p95 / p99 in ms, one run per level, single Node process, `BASE_URL` = the 
 0 responses with 5xx and 0 client errors at every level; pool wait p95 at most 6 ms. Front end (`npm run perf`, after `npm run seed`): JS 162 KB gzip, LCP 112 ms, CLS 0.003, TBT 0, selection to draft 82 ms, search 26 ms; all pass. `perf` needs baselines: without them the setup banner appears after load and CLS reads 0.025 (this happened once when the test suite had cleared a baseline, and is why the verification script seeds before `perf`).
 
 Run-to-run variance is large on this machine (the stream first event at 50 visitors was 281, 315 and 263 ms in three runs), so a budget that passes by a small margin here is not evidence either way. **The 25 and 50 visitor budgets are not met on this hardware, and the 10-visitor run misses two.** Meeting them needs a host with at least 4 free cores for the server alone (not measured here).
+
+
+### Latest run (production build, 2 vCPU shared, stubbed provider, database on the same host)
+
+p50 / p95 / p99 in ms, one run per level, single Node process. Command: `npm run load -- N` against a server started by `scripts/with-server.mjs`.
+
+| operation | budget p95 | 1 | 5 | 10 | 25 | 50 |
+|---|---|---|---|---|---|---|
+| inbox | 120 | 10 / 10 / 10 | 20 / 27 / 27 | 40 / 65 / 65 | 160 / 295 / 303 | 135 / 310 / 362 |
+| stored run | 80 | 41 / 41 / 41 | 82 / 120 / 120 | 190 / 230 / 230 | 301 / 362 / 479 | 462 / 561 / 572 |
+| 304 | 30 | 19 / 19 / 19 | 22 / 38 / 38 | 39 / 49 / 49 | 120 / 166 / 175 | 215 / 262 / 275 |
+| create run | 150 | 93 / 93 / 93 | 178 / 246 / 246 | 273 / 367 / 367 | 442 / 613 / 614 | 494 / 649 / 715 |
+| stream first event | 300 | 51 / 51 / 51 | 29 / 55 / 55 | 29 / 76 / 76 | 210 / 364 / 365 | 352 / 578 / 585 |
+
+No 5xx and no client errors at any level. Pool wait p95: 23, 32, 23, 21 and 184 ms; the pool (10 connections) saturates only at 50 visitors. Server RSS stayed between 127 and 185 MB, and no streams stayed open after any run. Every budget is met with one visitor; from 5 visitors the stored-run, 304 and create budgets are missed, and from 25 visitors all are missed on this host.
+
+These runs were slower than earlier ones on the same machine (an earlier run met the inbox budget at 10 visitors with 103 ms and the stream budget at 50), which shows run-to-run variance on shared cores that is comparable to the differences between code changes here. The profile shows about 5 ms of CPU per request on one event loop, spread across routing, serialization and the driver, with no single hot spot; the limit is the host, not a query.
+
+### Round trips to a remote database
+
+Counted as client-to-server packets per request, with a cold connection excluded: inbox 3, 304 revalidation 3, stored run 12, run creation 36. Skipping the COMMIT wait for read-only scopes and reading a run with its trace in one statement removed one trip each from the inbox, 304 and stored-run paths. With a database 20 ms away, run creation is the request most worth reducing next.

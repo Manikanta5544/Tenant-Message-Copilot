@@ -100,7 +100,10 @@ function toView(x: RunRow): RunView {
     banner: flags.includes("budget_exhausted") ? "budget_exhausted" : flags.includes("provider_failed") ? "provider_failed" : null,
   };
 }
-const RUN_SELECT = `SELECT r.*, m.text AS message_text, s.name, s.unit, s.preferred_language FROM runs r JOIN messages m ON m.id = r.message_id JOIN residents s ON s.id = r.resident_id`;
+const RUN_COLUMNS = `r.*, m.text AS message_text, s.name, s.unit, s.preferred_language`;
+const RUN_FROM = `FROM runs r JOIN messages m ON m.id = r.message_id JOIN residents s ON s.id = r.resident_id`;
+const TRACE_JSON = `COALESCE((SELECT json_agg(x ORDER BY x.seq) FROM (SELECT seq, stage, model, tokens_in, tokens_out, cost_micro_usd::text AS cost, latency_ms, outcome, payload, created_at
+                          FROM trace_events WHERE run_id = r.id ORDER BY seq) x), '[]'::json)`;
 
 /** A cheap version token for conditional GETs: one small query, no run body. It changes when the run's status, its trace or the caller's reviews change. */
 export async function runVersion(runId: string, visitor: string | null): Promise<{ token: string; stale: boolean } | null> {
@@ -119,10 +122,10 @@ export async function runVersion(runId: string, visitor: string | null): Promise
 export async function getRun(runId: string): Promise<{ run: RunView; trace: TraceRow[] } | null> {
   const url = appUrl();
   const found = await withScope(url, { orgId: DEMO_ORG_ID, view: "inbox" }, async (db) => {
-    const r = await db.query(`${RUN_SELECT} WHERE r.id = $1`, [runId]);
+    // The run and its trace in one statement: one network round trip instead of two (about 150 ms saved against a remote database).
+    const r = await db.query(`SELECT ${RUN_COLUMNS}, ${TRACE_JSON} AS trace_json ${RUN_FROM} WHERE r.id = $1`, [runId]);
     if (!r.rows[0]) return null;
-    const t = await db.query(`SELECT seq, stage, model, tokens_in, tokens_out, cost_micro_usd::text AS cost, latency_ms, outcome, payload, created_at FROM trace_events WHERE run_id = $1 ORDER BY seq`, [runId]);
-    return { row: r.rows[0], trace: t.rows };
+    return { row: r.rows[0], trace: r.rows[0].trace_json as TraceDbRow[] };
   });
   if (!found) return null;
   let row = found.row;

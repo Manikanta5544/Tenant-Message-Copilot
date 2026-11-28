@@ -12,7 +12,7 @@ export function proxy(req: NextRequest) {
   const hsts = process.env.HSTS_PRELOAD === "1";
   if (api) {
     // JSON routes need no per-request nonce: a fixed locked-down CSP and the static headers are all a response of data should carry.
-    const rejected = guardStateChange(req.method, req.headers, req.headers.get("host"));
+    const rejected = guardStateChange(req.method, req.headers, req.headers.get("host"), req.nextUrl.pathname);
     const res = rejected
       ? NextResponse.json({ error: rejected.error, code: rejected.code }, { status: rejected.status })
       : NextResponse.next();

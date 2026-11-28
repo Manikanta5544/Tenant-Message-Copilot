@@ -32,7 +32,7 @@ describe("code safety", () => {
   });
   it("no SQL is built by concatenating values: query text is a literal or a fixed fragment, values go in $n parameters", () => {
     // A template literal passed to query()/execute with a ${...} holding anything but a known fixed fragment would be injection-prone.
-    const risky = /\.query(?:<[^>]*>)?\(\s*`[^`]*\$\{(?!\s*(?:RUN_SELECT|USABLE_[A-Z_]+|lit\(|client\.escapeLiteral))[^`]*`/;
+    const risky = /\.query(?:<[^>]*>)?\(\s*`[^`]*\$\{(?!\s*(?:RUN_COLUMNS|RUN_FROM|TRACE_JSON|USABLE_[A-Z_]+|lit\(|client\.escapeLiteral))[^`]*`/;
     for (const f of ["db", "app", "core"].flatMap(walk)) expect(risky.test(read(f)), `${f} interpolates into SQL`).toBe(false);
   });
 });

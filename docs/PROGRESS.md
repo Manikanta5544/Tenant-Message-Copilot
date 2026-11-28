@@ -26,8 +26,8 @@
 - Measured: mock critical 20/20; mock tier 2 40/50 (gate FAIL, see DECISIONS 27-29). 219 tests pass, 8 skipped.
 - Next (needs the owner): set LLM_API_KEY and run `npm run eval`; Neon URLs + Vercel token to deploy; GitHub remote.
 
-## Review rounds
-- Round 1 (fix plan) and round 2 (lock report) applied: see DECISIONS 31-43. 257 tests pass, 8 skipped (Neon). Remaining work needs the owner: LLM key, live eval + recordings, Neon/Vercel deploy.
+## Review history
+- Plan and lock reviews applied: see DECISIONS 31-43. 257 tests pass, 8 skipped (Neon).
 
 ## Production-readiness pass
 - Phase 1 done: D1, D2, D6, D3, D4, rate-limit trust, input hardening, error pages, logs, deps, bundle scan.

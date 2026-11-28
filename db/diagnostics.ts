@@ -21,7 +21,8 @@ const MIGRATE_SEED_BASH: Fix = { powershell: "npm run migrate; npm run seed", ba
 
 /** Which env file the developer actually has. Notepad on Windows likes to save ".env" as ".env.txt". */
 export function envFileCheck(dir = process.cwd()): Check {
-  const has = (n: string) => fs.existsSync(path.join(dir, n));
+  // A developer-machine check by design. The turbopackIgnore markers keep the bundler from tracing the whole project into the server output for it.
+  const has = (n: string) => fs.existsSync(/* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ dir, n));
   if (has(".env")) return { id: "env-file", label: "Environment file", status: "ok", detail: ".env found" };
   const wrong = [".env.txt", ".env.example.txt", ".env (1)", "env", ".env.local.txt"].find(has);
   if (wrong) return { id: "env-file", label: "Environment file", status: "fail", detail: `".env" not found, but "${wrong}" exists. Windows Notepad adds .txt: rename it to exactly .env`, fix: { powershell: `Rename-Item "${wrong}" .env`, bash: `mv "${wrong}" .env` } };

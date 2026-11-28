@@ -9,3 +9,6 @@ next-env.d.ts
 coverage
 
 .tmc-fingerprint
+# Local run artefacts
+*.log
+test-results/
